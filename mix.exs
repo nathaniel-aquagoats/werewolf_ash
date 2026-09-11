@@ -10,7 +10,35 @@ defmodule WerewolfAsh.MixProject do
       deps: deps(),
       consolidate_protocols: Mix.env() != :dev,
       aliases: aliases(),
-      elixirc_paths: elixirc_paths(Mix.env())
+      elixirc_paths: elixirc_paths(Mix.env()),
+      usage_rules: usage_rules()
+    ]
+  end
+
+  defp usage_rules do
+    [
+      file: "AGENTS.md",
+      usage_rules: [:usage_rules, :igniter],
+      skills: [
+        location: ".claude/skills",
+        build: [
+          "ash-framework": [
+            description:
+              "Use when working with Ash Framework or any ash_* extension: domains, resources, actions, policies, AshPostgres, AshOban, AshGraphql, AshAuthentication. Consult before any domain change.",
+            usage_rules: [:ash, ~r/^ash_/]
+          ],
+          reactor: [
+            description:
+              "Use when writing or changing Reactor sagas/workflows (steps, inputs, compensation, map/switch/compose).",
+            usage_rules: [:reactor]
+          ],
+          "phoenix-api": [
+            description:
+              "Use when working on the Phoenix API layer: endpoint, router, Absinthe/GraphQL plugs and sockets.",
+            usage_rules: [:phoenix, ~r/^phoenix_/]
+          ]
+        ]
+      ]
     ]
   end
 
@@ -25,6 +53,16 @@ defmodule WerewolfAsh.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
+      {:bcrypt_elixir, "~> 3.0"},
+      {:picosat_elixir, "~> 0.2"},
+      {:absinthe_phoenix, "~> 2.0"},
+      {:ash_authentication, "~> 4.0"},
+      {:ash_graphql, "~> 1.0"},
+      {:jason, "~> 1.0"},
+      {:bandit, "~> 1.0"},
+      {:phoenix, "~> 1.8"},
+      {:usage_rules, "~> 1.0", only: [:dev]},
+      {:reactor, "~> 1.0"},
       {:sourceror, "~> 1.8", only: [:dev, :test]},
       {:oban, "~> 2.0"},
       {:ash_state_machine, "~> 0.2"},

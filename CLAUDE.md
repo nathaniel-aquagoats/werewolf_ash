@@ -60,18 +60,36 @@ This protocol applies when ending a Beads implementation workflow. It is subordi
 
 ## Build & Test
 
-_Add your build and test commands here_
+Backend (Elixir, needs local Postgres 16 with `postgres`/`postgres`):
 
 ```bash
-# Example:
-# npm install
-# npm test
+mix setup            # ash.setup: create DB + run migrations
+mix test             # runs ash.setup --quiet first
+mix ash.codegen <name>   # after any resource change: generates migrations + snapshots
+mix phx.server       # API on :4000, GraphiQL at /gql/playground
+mix usage_rules.sync # refresh AGENTS.md + .claude/skills after adding deps
+```
+
+Mobile (Expo, in `mobile/`, Node 24 via mise):
+
+```bash
+cd mobile && npm install && npx expo start
 ```
 
 ## Architecture Overview
 
-_Add a brief overview of your project architecture_
+Real-time (wall-clock day/night) werewolf game. Ash 3 domain is the source of truth; every interface is a thin adapter over it.
+
+- `lib/werewolf_ash/accounts` — AshAuthentication (password strategy), `User` + `Token`
+- `lib/werewolf_ash/games` — game domain (Game, Player, Phase, Action); rules live here, never in the API or mobile layers
+- Reactor sagas resolve phases (end of day / end of night / win check); AshOban triggers fire them on schedule
+- `lib/werewolf_ash_web` — API-only Phoenix endpoint: AshGraphql at `/gql`, subscriptions over `/ws/gql`. No HTML, no LiveView
+- `mobile/` — Expo + React Native + TypeScript client, GraphQL client generated from the Ash schema
 
 ## Conventions & Patterns
 
-_Add your project-specific conventions here_
+- Learning project: prefer choices that exercise Ash/Reactor features over the cheapest path, and keep every task verifiable by `mix test`
+- Use Ash generators (`mix ash.gen.domain`, `mix ash.gen.resource`, `mix ash.codegen`) rather than hand-writing resources; consult the `ash-framework` / `reactor` skills before domain changes
+- Game rules must be testable without a clock or an interface: phase transitions are explicit actions (`end_day`, `end_night`), the scheduler only calls them
+- Rules decisions already made: bodyguard picks by day and protects that night; hunter gets a 1h window after death then a random target; lynch is plurality with tie = no lynch; wolf kill is majority with tie = no kill; seer gets an immediate yes/no
+- Do not commit or push unless asked

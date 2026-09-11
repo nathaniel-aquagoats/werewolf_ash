@@ -1,5 +1,6 @@
 import Config
 
+config :ash_graphql, authorize_update_destroy_with_error?: true
 config :ash_oban, pro?: false
 
 config :werewolf_ash, Oban,
@@ -11,7 +12,15 @@ config :werewolf_ash, Oban,
   repo: WerewolfAsh.Repo,
   plugins: [{Oban.Plugins.Cron, []}]
 
-config :werewolf_ash, ecto_repos: [WerewolfAsh.Repo], ash_domains: []
+config :werewolf_ash, ecto_repos: [WerewolfAsh.Repo], ash_domains: [WerewolfAsh.Accounts]
+
+config :werewolf_ash, WerewolfAshWeb.Endpoint,
+  url: [host: "localhost"],
+  adapter: Bandit.PhoenixAdapter,
+  render_errors: [formats: [json: WerewolfAshWeb.ErrorJSON], layout: false],
+  pubsub_server: WerewolfAsh.PubSub
+
+config :phoenix, :json_library, Jason
 
 # These enable behaviors that will become the default in the next major
 # version of Ash. Setting them now opts your application into the new
@@ -39,6 +48,10 @@ config :spark,
     remove_parens?: true,
     "Ash.Resource": [
       section_order: [
+        :authentication,
+        :token,
+        :user_identity,
+        :graphql,
         :postgres,
         :resource,
         :code_interface,
@@ -56,7 +69,9 @@ config :spark,
         :identities
       ]
     ],
-    "Ash.Domain": [section_order: [:resources, :policies, :authorization, :domain, :execution]]
+    "Ash.Domain": [
+      section_order: [:graphql, :resources, :policies, :authorization, :domain, :execution]
+    ]
   ]
 
 import_config "#{config_env()}.exs"
