@@ -12,7 +12,9 @@ config :werewolf_ash, Oban,
   repo: WerewolfAsh.Repo,
   plugins: [{Oban.Plugins.Cron, []}]
 
-config :werewolf_ash, ecto_repos: [WerewolfAsh.Repo], ash_domains: [WerewolfAsh.Accounts]
+config :werewolf_ash,
+  ecto_repos: [WerewolfAsh.Repo],
+  ash_domains: [WerewolfAsh.Games, WerewolfAsh.Accounts]
 
 config :werewolf_ash, WerewolfAshWeb.Endpoint,
   url: [host: "localhost"],
