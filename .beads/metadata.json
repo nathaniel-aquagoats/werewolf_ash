@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "werewolf_ash",
+  "project_id": "c580166a-0a17-4ffb-a71b-f634672254fd"
+}
