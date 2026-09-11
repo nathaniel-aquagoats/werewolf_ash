@@ -39,5 +39,10 @@ defmodule WerewolfAsh.Games do
       define :get_action, action: :read, get_by: [:id]
       define :list_actions, action: :read
     end
+
+    resource WerewolfAsh.Games.Message do
+      define :send_message, action: :send_message, args: [:game_id, :author_id, :channel, :body]
+      define :list_messages_visible_to, action: :visible_to, args: [:player_id]
+    end
   end
 end

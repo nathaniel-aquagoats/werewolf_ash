@@ -9,6 +9,7 @@ defmodule WerewolfAsh.Generators do
 
   alias WerewolfAsh.Accounts.User
   alias WerewolfAsh.Games.Game
+  alias WerewolfAsh.Games.Player
 
   def user(opts \\ []) do
     seed_generator(
@@ -39,6 +40,24 @@ defmodule WerewolfAsh.Generators do
           owner_id: owner.id
         ]
       end,
+      overrides: opts
+    )
+  end
+
+  @doc """
+  A seat in a game. Pass `game_id:` to seat several players in one game and
+  `role:` to deal a role; `alive` can only be flipped through `update_player`.
+  """
+  def player(opts \\ []) do
+    changeset_generator(
+      Player,
+      :create,
+      defaults: [
+        # Lazy, so an overridden game_id/user_id does not create a spare record.
+        game_id: StreamData.repeatedly(fn -> generate(game()).id end),
+        user_id: StreamData.repeatedly(fn -> generate(user()).id end),
+        role: nil
+      ],
       overrides: opts
     )
   end
