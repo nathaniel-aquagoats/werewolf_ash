@@ -24,6 +24,13 @@ config :werewolf_ash, WerewolfAshWeb.Endpoint,
 
 config :phoenix, :json_library, Jason
 
+# Credentials travel as GraphQL variables under client-chosen names, so
+# name-based filtering of a single "password" key is not enough: redact the
+# whole variables map from Phoenix request logs and disable Absinthe's own
+# query/variables logging.
+config :phoenix, :filter_parameters, ["password", "variables"]
+config :absinthe, log: false
+
 # These enable behaviors that will become the default in the next major
 # version of Ash. Setting them now opts your application into the new
 # behavior and ensures a seamless upgrade. See the backwards compatibility

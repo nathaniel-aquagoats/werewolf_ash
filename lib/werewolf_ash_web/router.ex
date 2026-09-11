@@ -2,6 +2,7 @@ defmodule WerewolfAshWeb.Router do
   use Phoenix.Router
 
   pipeline :graphql do
+    plug(WerewolfAshWeb.Plugs.BearerActor)
     plug(AshGraphql.Plug)
   end
 
@@ -15,7 +16,7 @@ defmodule WerewolfAshWeb.Router do
     forward("/playground", Absinthe.Plug.GraphiQL,
       schema: Module.concat(["WerewolfAshWeb.GraphqlSchema"]),
       socket: Module.concat(["WerewolfAshWeb.GraphqlSocket"]),
-      interface: :simple
+      interface: :playground
     )
 
     forward("/", Absinthe.Plug, schema: Module.concat(["WerewolfAshWeb.GraphqlSchema"]))

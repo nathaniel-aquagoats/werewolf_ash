@@ -4,7 +4,7 @@ defmodule WerewolfAsh.Accounts.User do
     domain: WerewolfAsh.Accounts,
     data_layer: AshPostgres.DataLayer,
     authorizers: [Ash.Policy.Authorizer],
-    extensions: [AshAuthentication]
+    extensions: [AshAuthentication, AshGraphql.Resource]
 
   authentication do
     add_ons do
@@ -48,6 +48,10 @@ defmodule WerewolfAsh.Accounts.User do
     end
   end
 
+  graphql do
+    type :user
+  end
+
   postgres do
     table "users"
     repo WerewolfAsh.Repo
@@ -55,6 +59,19 @@ defmodule WerewolfAsh.Accounts.User do
 
   actions do
     defaults [:read]
+
+    read :current_user do
+      description "The user identified by the request's bearer token, if any."
+      get? true
+
+      # Not an action `filter expr(id == ^actor(:id))`: that makes anonymous
+      # requests fail with `ReadActionRequiresActor`, whereas an anonymous
+      # caller asking "who am I?" should simply get nothing.
+      prepare fn
+        query, %{actor: nil} -> Ash.Query.do_filter(query, false)
+        query, %{actor: actor} -> Ash.Query.do_filter(query, id: actor.id)
+      end
+    end
 
     read :get_by_subject do
       description "Get a user by the subject claim in a JWT"
@@ -227,6 +244,16 @@ defmodule WerewolfAsh.Accounts.User do
   policies do
     bypass AshAuthentication.Checks.AshAuthenticationInteraction do
       authorize_if always()
+    end
+
+    policy action([:register_with_password, :sign_in_with_password]) do
+      description "Anyone may register or sign in; the actions verify the credentials themselves."
+      authorize_if always()
+    end
+
+    policy action(:current_user) do
+      description "A user may only read themselves."
+      authorize_if expr(id == ^actor(:id))
     end
   end
 
