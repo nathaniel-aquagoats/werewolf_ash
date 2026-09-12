@@ -144,9 +144,18 @@ The routine's prompt is only a pointer; the orchestration is
   `bead/<bead-id>`.
 - `code-reviewer` (opus) breaks each rule in a scratch copy to prove a test
   catches it, hard-rejects anything outside the spec's scope, then rebases,
-  re-runs the gates and merges with `gh pr merge --squash --delete-branch`.
+  re-runs the gates and squash-merges.
+- Both agents run **synchronously**. The cloud session ends when the
+  orchestrator's turn ends and does not wake for a backgrounded subagent, so a
+  dispatched-and-forgotten reviewer strands the bead as an open, unreviewed PR.
 - One retry on rejection. Then the PR is labelled `needs-human` and left open.
 - Never a direct push to `main`.
+
+**GitHub in the cloud is split.** Reads (`gh pr list`, `git fetch`) and
+`git push` work, but the `gh` CLI's ambient token is rejected for writes and
+`gh api` write paths are proxy-refused. PRs are created and merged with the
+`mcp__github__*` tools instead. Deleting a remote branch is impossible from the
+cloud (403); merged branches are pruned by the local sync.
 
 ### Back again
 
