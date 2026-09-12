@@ -80,6 +80,12 @@ A hook refuses writes to `.claude/`, `.beads/`, `CLAUDE.md`, `AGENTS.md`,
 `.credo.exs` and `.formatter.exs`. Pipeline and lint configuration are not
 yours to change. If one of them is genuinely wrong, say so in the PR body.
 
+## Do not background yourself
+
+Finish inside the turn you were called in. The cloud session ends when the
+orchestrator's turn ends, so work handed off to a background process is work
+that may never land.
+
 ## Reply
 
 What you implemented rule by rule, the gate results, the branch name and the

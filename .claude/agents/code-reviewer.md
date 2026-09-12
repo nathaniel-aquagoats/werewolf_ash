@@ -130,6 +130,15 @@ copies exist to be broken and thrown away; the branch is not yours to touch.
 Everything you would have changed goes in the review, and the coder gets one
 retry with your findings verbatim.
 
+## Do not background yourself
+
+Finish inside the turn you were called in. The cloud session ends when the
+orchestrator's turn ends. A review that is still running when that happens
+leaves the bead as an open, unreviewed PR and the whole run is wasted.
+
+If the gates are slow, run them anyway and wait; do not defer them to a
+background process.
+
 ## Reply
 
 Merged or rejected, the rule-by-rule result, and the PR number.

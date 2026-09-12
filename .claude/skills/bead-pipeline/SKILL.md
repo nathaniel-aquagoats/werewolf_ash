@@ -116,6 +116,21 @@ carrying it at every start, so labelling is how you raise a hand. If labelling
 fails outright, say so loudly in a PR comment instead — an unlabelled stuck PR
 is invisible to the maintainer.
 
+## Never dispatch and walk away
+
+Run the coder and the reviewer **synchronously**. Do not launch either as a
+background or async agent, and never end your turn while one is still working.
+
+This is not a style preference. The cloud session ends when your turn ends, and
+it does not reliably wake for a background subagent's result — a run that
+dispatched the reviewer and stopped left a real bead as an open, unreviewed PR
+(observed 2026-09-12, PR #3). If you find yourself writing "I'll wait for its
+result", you have already made the mistake: waiting is not a thing you can do.
+Call the agent, block on its answer, then act on it in the same turn.
+
+If a step is genuinely too slow to finish in one turn, do not paper over it by
+backgrounding. Label the PR `needs-human` and say what timed out.
+
 ## Rules for you, the orchestrator
 
 - Never write code and never edit the diff. You dispatch and you record.
