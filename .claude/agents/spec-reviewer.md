@@ -73,6 +73,17 @@ One round back to the author. Report your findings; the author revises; you
 re-check only what you flagged, and you do not open new fronts on the second
 pass unless the revision introduced them.
 
+**Re-read the file from disk before the second pass.** Do not judge the
+revision against the copy in your context — it is the version you already
+criticised, and reporting it as unchanged is worse than not re-checking at
+all. Before claiming any finding still stands, quote the current text you are
+objecting to, freshly read. A claim that something is "byte-for-byte the
+original" is a claim about the file, and it needs the file to back it.
+
+This is not hypothetical: on 2026-09-12 a second pass reported a resolved
+blocker as untouched and invented a stale-section nit, both from cached
+content, on a spec where every finding had in fact been addressed.
+
 Then the spec goes to the user with any unresolved findings at the top.
 
 ## You never approve

@@ -123,6 +123,14 @@ Post the review and stop. Do not merge. Do not fix it yourself.
 
 If a rebase conflicts, do not resolve it: label the PR `needs-human` and stop.
 
+## Re-read before a second pass
+
+If you are reviewing a revision, read the diff and the files again from disk.
+Never judge the retry against the copy in your context: that is the version you
+already rejected, and reporting unchanged code that was in fact fixed sends a
+correct implementation back for a second time and burns the bead's last retry.
+Quote the current text of anything you say is still wrong.
+
 ## You never edit code
 
 Not a typo, not a one-line fix, not the test you wish existed. Your scratch
