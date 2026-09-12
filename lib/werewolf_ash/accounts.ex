@@ -23,11 +23,24 @@ defmodule WerewolfAsh.Accounts do
         args [:token]
         hide_inputs [:remember_me]
       end
+
+      # `read_action :current_user` (rather than the default primary read,
+      # which no policy grants) is what makes this reachable at all: it
+      # resolves the record to update from the request's actor, so
+      # `identity false` is correct too — there is no `id` input to look up.
+      update WerewolfAsh.Accounts.User, :set_name, :set_name do
+        identity false
+        read_action :current_user
+        args [:name]
+      end
     end
   end
 
   resources do
     resource WerewolfAsh.Accounts.Token
-    resource WerewolfAsh.Accounts.User
+
+    resource WerewolfAsh.Accounts.User do
+      define :set_name, args: [:name]
+    end
   end
 end

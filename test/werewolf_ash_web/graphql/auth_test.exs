@@ -36,6 +36,19 @@ defmodule WerewolfAshWeb.Graphql.AuthTest do
   query { currentUser { id email } }
   """
 
+  @current_user_name """
+  query { currentUser { name } }
+  """
+
+  @set_name """
+  mutation SetName($name: String!) {
+    setName(name: $name) {
+      result { name }
+      errors { message fields code }
+    }
+  }
+  """
+
   setup do
     Application.put_env(:werewolf_ash, :magic_link_test_pid, self())
     on_exit(fn -> Application.delete_env(:werewolf_ash, :magic_link_test_pid) end)
@@ -58,6 +71,17 @@ defmodule WerewolfAshWeb.Graphql.AuthTest do
     assert %{"data" => %{"requestMagicLink" => true}} = response
     assert_received {:magic_link_token, ^email, token}
     token
+  end
+
+  # Signs a fresh, nameless user in and returns a conn carrying its bearer
+  # token, ready for authenticated requests.
+  defp sign_in(conn) do
+    token = request_token(conn, unique_email())
+
+    assert %{"data" => %{"signInWithMagicLink" => %{"metadata" => %{"token" => bearer}}}} =
+             gql(conn, @sign_in, %{"token" => token})
+
+    put_req_header(conn, "authorization", "Bearer #{bearer}")
   end
 
   describe "magic-link sign-in flow" do
@@ -173,6 +197,43 @@ defmodule WerewolfAshWeb.Graphql.AuthTest do
 
     assert {:ok, socket} = connect(WerewolfAshWeb.GraphqlSocket, %{})
     assert %{actor: nil} = socket.assigns.absinthe.opts[:context]
+  end
+
+  describe "setName / currentUser.name" do
+    test "currentUser.name is null before a name is set", %{conn: conn} do
+      conn = sign_in(conn)
+
+      assert %{"data" => %{"currentUser" => %{"name" => nil}}} = gql(conn, @current_user_name)
+    end
+
+    test "setName sets the signed-in user's own name, reflected by a follow-up currentUser",
+         %{conn: conn} do
+      conn = sign_in(conn)
+
+      assert %{
+               "data" => %{
+                 "setName" => %{"result" => %{"name" => "Alice"}, "errors" => []}
+               }
+             } = gql(conn, @set_name, %{"name" => "Alice"})
+
+      assert %{"data" => %{"currentUser" => %{"name" => "Alice"}}} =
+               gql(conn, @current_user_name)
+    end
+
+    test "a blank name comes back as an entry in errors, not a crash", %{conn: conn} do
+      conn = sign_in(conn)
+
+      assert %{"data" => %{"setName" => %{"result" => nil, "errors" => [error]}}} =
+               gql(conn, @set_name, %{"name" => "   "})
+
+      assert error["fields"] == ["name"]
+    end
+
+    test "a call with no bearer token changes no User and comes back as an error, not a crash",
+         %{conn: conn} do
+      assert %{"data" => %{"setName" => %{"result" => nil, "errors" => [_error]}}} =
+               gql(conn, @set_name, %{"name" => "Anyone"})
+    end
   end
 
   describe "SendMagicLinkEmail (unit)" do

@@ -11,6 +11,7 @@ defmodule WerewolfAsh.Games.Player do
 
   alias WerewolfAsh.Games.Player.Changes.ResolveGameByJoinCode
   alias WerewolfAsh.Games.Player.Validations.GameInLobby
+  alias WerewolfAsh.Games.Player.Validations.UserHasName
 
   postgres do
     table "players"
@@ -33,6 +34,7 @@ defmodule WerewolfAsh.Games.Player do
     create :create do
       primary? true
       accept [:game_id, :user_id]
+      validate UserHasName
     end
 
     create :join do
@@ -45,6 +47,7 @@ defmodule WerewolfAsh.Games.Player do
 
       change ResolveGameByJoinCode
       validate {GameInLobby, field: :join_code}
+      validate UserHasName
     end
 
     update :update do
