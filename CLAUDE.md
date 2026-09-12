@@ -108,22 +108,90 @@ Real-time (wall-clock day/night) werewolf game. Ash 3 domain is the source of tr
 - Alias style (enforced by `mix lint` via Credo): never group aliases (`alias Foo.{Bar, Baz}` -> one `alias` per line); never call a nested module fully qualified — `Foo.Bar.baz()` must be `alias Foo.Bar` + `Bar.baz()`. Elixir stdlib modules (`Enum`, `DateTime`, `Ecto`-style single names) are exempt per Credo's defaults
 - Do not commit or push unless asked
 
-## Parallel agent workflow
+## Bead lifecycle
 
-Beads are worked by subagents in git worktrees under `.claude/worktrees/` (gitignored); a coordinator session merges.
+Beads are specified locally, implemented in a claude.ai cloud routine, and
+merged by the reviewer that checked them. The old worktree-and-coordinator
+workflow is retired; `.claude/worktrees/` is no longer used.
 
-- Division of labour: any request that changes the repo (features, fixes, tests, repo config/tooling) becomes a bead and is implemented by a worker, never by the coordinator in the main tree. The coordinator sets the bead's priority when context makes it obvious and asks the owner otherwise. Requests about how agents operate (briefs, standards, model choice, this file, the beads graph) are done by the coordinator directly. If code work is beyond a worker, the coordinator says so instead of doing it quietly. Coordinator duties: claim/close beads, dispatch, resolve merge conflicts, run `mix test` and `mix lint` on `main` after each squash
+```
+spec-author  ->  you  ->  spec-reviewer  ->  approve  ->  cloud routine
+                                                              |
+                                          coder -> code-reviewer -> merge
+                                                              |
+                                     SessionStart sync closes the bead
+```
 
-- Worktrees share the main repo's beads DB. Workers use `bd --readonly`; only the coordinator claims/closes/updates beads
-- Each worker exports its own `MIX_TEST_PARTITION` and runs `mix deps.get && mix compile` once (deps/_build are per worktree)
-- A worker commits on its worktree branch; a review agent checks the diff against the bead's acceptance condition; the coordinator then `git merge --squash`es into `main` as one commit titled `<bead-id>: <title>` and closes the bead
-- Wave order follows `bd ready`; keep at most 3 workers running
-- Subagent model: workers and reviewers both run on `model: "sonnet"` unless the user says otherwise
+### Locally
 
-### Test standard (workers write to it, reviewers enforce it)
+- `spec-author` (sonnet) turns a bead into `.specs/<bead-id>.md`: Goal, numbered
+  testable Rules, Out of scope, Acceptance naming public functions, advisory
+  Touches.
+- You read and edit it. This is the point where the design is decided.
+- `spec-reviewer` (opus) checks it against the bead and the settled decisions
+  here. It never approves on your behalf.
+- **`approve <bead-id>`** fires the routine with the whole spec. **`reject
+  <bead-id>: <note>`** sends it back to the author and makes no network call.
+  A `UserPromptSubmit` hook implements both; approval refuses if the bead is
+  closed, unknown, has unfinished dependencies, or has no spec.
+
+### In the cloud
+
+The routine's prompt is only a pointer; the orchestration is
+`.claude/skills/bead-pipeline/SKILL.md`, so it is versioned with the repo.
+
+- `coder` (sonnet) implements the spec and only the spec, then pushes to
+  `bead/<bead-id>`.
+- `code-reviewer` (opus) breaks each rule in a scratch copy to prove a test
+  catches it, hard-rejects anything outside the spec's scope, then rebases,
+  re-runs the gates and merges with `gh pr merge --squash --delete-branch`.
+- One retry on rejection. Then the PR is labelled `needs-human` and left open.
+- Never a direct push to `main`.
+
+### Back again
+
+GitHub is the only channel home; the beads database never leaves this machine.
+A `SessionStart` hook closes beads whose PR merged by parsing the bead id from
+the PR title, deletes the spent spec file, prunes merged remote branches, and
+lists anything labelled `needs-human`. **The squash title must be
+`<bead-id>: <title>`** or the bead is stranded open.
+
+### Specs are ephemeral
+
+`.specs/` is gitignored and never committed. The copy that survives is the one
+in the PR body, which is the audit trail. The local file is deleted when its PR
+merges.
+
+### Division of labour
+
+Anything that changes the product — features, fixes, tests — becomes a bead and
+goes through the pipeline. Anything about how the agents operate — briefs,
+hooks, skills, this file, the beads graph — is done directly in the main tree,
+because a bead worker is forbidden from touching it.
+
+### Hooks
+
+| Hook | Event | Does |
+|---|---|---|
+| `gates.sh` | `git push`, and `coder` finishing | `mix compile --warnings-as-errors`, `mix ash.codegen --check`, `mix lint`, `mix test`; exit 2 with the failing tail |
+| `protect-pipeline.py` | Edit/Write/Bash | Refuses subagent writes to `.claude/`, `.beads/`, `CLAUDE.md`, `AGENTS.md`, `.credo.exs`, `.formatter.exs`. The main session is unaffected |
+| `session-start.sh` | SessionStart | Starts Postgres, syncs merged beads, runs `bd prime` |
+
+### Secrets and configuration
+
+`ROUTINE_ID` and `ROUTINE_TOKEN` live in fish universal variables
+(`set -Ux ROUTINE_ID trig_...`), never in the repo and never in chat. The
+approve hook reads them from the environment and refuses if they are unset.
+
+The cloud environment's setup script is mirrored at `.claude/cloud-setup.sh`
+for review; the live copy is pasted into the environment at claude.ai. Edit
+both together. It needs Network access set to Custom with `repo.hex.pm` and
+`builds.hex.pm` added.
+
+### Test standard (the coder writes to it, the code-reviewer enforces it)
 
 - Coverage by rule, not by line: every rule/acceptance item in the bead has at least one test that fails if that rule is removed, plus its negative case (wrong role, dead player, wrong phase, bad token...). Edge cases only where the rules make them meaningful (ties, boundaries, DST, zero players)
 - Every public function gets tested: the domain code interface and GraphQL, and also public changes, validations, preparations, reactor modules/steps, and helpers (`Game.Clock`, `Message.Visibility`, ...). Unit-test those directly on their own contract; then integration-test the rule end to end once through the code interface or GraphQL. Private functions are covered through their callers, not tested directly
 - Not brittle, not exhaustive: assert on behaviour and on error class/field, not on exact error message text, whole-struct equality, generated ids, timestamps, log output, or ordering that is not itself a rule. A public function gets a handful of tests — its main contract, its negative case, and the edge cases the rules make meaningful — typically 2–5, never a 20-case matrix of near-duplicate inputs. Prefer one well-chosen example per behaviour over many variations of the same behaviour
 - Deterministic: injected `now`, no `sleep`, no dependence on test order; `async: true` unless the test genuinely needs the shared DB
-- Reviewer checks, always: (1) pick two rules from the bead and flip each mentally (or in a scratch copy) — a test must fail; (2) look for assertions that a rename, reworded message, or extra field would break — flag them as nits with the looser assertion to use; (3) look for rules with no test and for tests that assert nothing meaningful
+- Reviewer checks, always: (1) take **every** numbered rule in the spec, break it in a scratch copy, and confirm a test fails — a rule with no failing test is a rejection, and reading a test and judging it sufficient is not this check; (2) look for assertions that a rename, reworded message, or extra field would break — flag them as nits with the looser assertion to use; (3) reject any change outside the spec's scope, however good it is
