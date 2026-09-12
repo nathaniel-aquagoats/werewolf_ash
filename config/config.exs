@@ -1,5 +1,8 @@
 import Config
 
+# Game day/night windows are wall-clock times in a per-game IANA zone.
+config :elixir, :time_zone_database, Tz.TimeZoneDatabase
+
 config :ash_graphql, authorize_update_destroy_with_error?: true
 config :ash_oban, pro?: false
 

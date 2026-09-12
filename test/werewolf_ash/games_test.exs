@@ -3,6 +3,7 @@ defmodule WerewolfAsh.GamesTest do
 
   import WerewolfAsh.Generators
 
+  alias AshStateMachine.Errors.NoMatchingTransition
   alias WerewolfAsh.Games
 
   describe "games" do
@@ -104,6 +105,201 @@ defmodule WerewolfAsh.GamesTest do
         |> Ash.Changeset.force_change_attribute(:state, :limbo)
         |> Ash.update!()
       end
+    end
+
+    test "rejects a timezone the tz database does not know" do
+      owner = generate(user())
+
+      assert {:error, %Ash.Error.Invalid{errors: [error]}} =
+               Games.create_game(%{
+                 name: "Nowhere",
+                 join_code: "MARS#{System.unique_integer([:positive])}",
+                 timezone: "Mars/Olympus_Mons",
+                 owner_id: owner.id
+               })
+
+      assert %Ash.Error.Changes.InvalidAttribute{field: :timezone} = error
+
+      game = generate(game())
+
+      assert {:error, %Ash.Error.Invalid{errors: [%{field: :timezone}]}} =
+               Games.update_game(game, %{timezone: "Not/A_Zone"})
+
+      assert %{timezone: "Asia/Tokyo"} = Games.update_game!(game, %{timezone: "Asia/Tokyo"})
+    end
+  end
+
+  describe "phase transitions" do
+    # 2026-06-15 is an ordinary summer day: London is BST (UTC+1), New York EDT (UTC-4).
+
+    test "walk lobby -> day -> night -> day on the game's local clock (London)" do
+      game =
+        generate(game(timezone: "Europe/London", day_start: ~T[08:00:00], day_end: ~T[20:00:00]))
+
+      # 10:30 BST is daytime, so the first phase is a day ending at 20:00 BST.
+      game = Games.start_game!(game, %{now: ~U[2026-06-15 09:30:00Z]})
+      assert game.state == :day
+      assert game.phase_ends_at == ~U[2026-06-15 19:00:00.000000Z]
+
+      assert [
+               %{
+                 kind: :day,
+                 number: 1,
+                 started_at: ~U[2026-06-15 09:30:00.000000Z],
+                 ended_at: nil
+               }
+             ] =
+               phases(game)
+
+      game = Games.end_day!(game, %{now: ~U[2026-06-15 19:00:00Z]})
+      assert game.state == :night
+      assert game.phase_ends_at == ~U[2026-06-16 07:00:00.000000Z]
+
+      assert [
+               %{number: 1, ended_at: ~U[2026-06-15 19:00:00.000000Z]},
+               %{
+                 kind: :night,
+                 number: 2,
+                 started_at: ~U[2026-06-15 19:00:00.000000Z],
+                 ended_at: nil
+               }
+             ] = phases(game)
+
+      game = Games.end_night!(game, %{now: ~U[2026-06-16 07:00:00Z]})
+      assert game.state == :day
+      assert game.phase_ends_at == ~U[2026-06-16 19:00:00.000000Z]
+
+      assert [
+               %{number: 1, kind: :day},
+               %{number: 2, kind: :night, ended_at: ~U[2026-06-16 07:00:00.000000Z]},
+               %{
+                 number: 3,
+                 kind: :day,
+                 started_at: ~U[2026-06-16 07:00:00.000000Z],
+                 ended_at: nil
+               }
+             ] = phases(game)
+
+      game = Games.get_game!(game.id, load: [:current_phase, :last_phase_number])
+      assert game.last_phase_number == 3
+      assert %{number: 3, kind: :day} = game.current_phase
+    end
+
+    test "a start after dusk lands in night and ends at the next dawn (New York)" do
+      game =
+        generate(
+          game(timezone: "America/New_York", day_start: ~T[07:30:00], day_end: ~T[19:30:00])
+        )
+
+      # 23:00 EDT on the 15th
+      game = Games.start_game!(game, %{now: ~U[2026-06-16 03:00:00Z]})
+      assert game.state == :night
+      assert game.phase_ends_at == ~U[2026-06-16 11:30:00.000000Z]
+      assert [%{kind: :night, number: 1, ended_at: nil}] = phases(game)
+
+      game = Games.end_night!(game, %{now: ~U[2026-06-16 11:30:00Z]})
+      assert game.state == :day
+      assert game.phase_ends_at == ~U[2026-06-16 23:30:00.000000Z]
+
+      assert [%{number: 1, ended_at: ~U[2026-06-16 11:30:00.000000Z]}, %{number: 2, kind: :day}] =
+               phases(game)
+    end
+
+    test "a start before dawn is a night that ends at dawn the same day" do
+      game = generate(game())
+
+      game = Games.start_game!(game, %{now: ~U[2026-06-15 05:00:00Z]})
+      assert game.state == :night
+      assert game.phase_ends_at == ~U[2026-06-15 08:00:00.000000Z]
+    end
+
+    test "a transition made exactly on a boundary schedules the following one" do
+      game = generate(game())
+
+      # exactly day_start: day, ending at day_end today
+      game = Games.start_game!(game, %{now: ~U[2026-06-15 08:00:00Z]})
+      assert game.state == :day
+      assert game.phase_ends_at == ~U[2026-06-15 20:00:00.000000Z]
+
+      # exactly day_end: night, ending at day_start tomorrow
+      game = Games.end_day!(game, %{now: ~U[2026-06-15 20:00:00Z]})
+      assert game.phase_ends_at == ~U[2026-06-16 08:00:00.000000Z]
+    end
+
+    test "boundaries follow the local clock across a DST change" do
+      # London springs forward at 01:00 UTC on 2026-03-29.
+      game = generate(game(timezone: "Europe/London"))
+
+      game = Games.start_game!(game, %{now: ~U[2026-03-28 08:00:00Z]})
+      assert game.phase_ends_at == ~U[2026-03-28 20:00:00.000000Z]
+
+      # 08:00 BST is 07:00 UTC: an eleven-hour night.
+      game = Games.end_day!(game, %{now: ~U[2026-03-28 20:00:00Z]})
+      assert game.phase_ends_at == ~U[2026-03-29 07:00:00.000000Z]
+    end
+
+    test "a boundary in a DST gap or overlap resolves to a single instant" do
+      # New York springs forward at 02:00 EST on 2026-03-08, so 02:30 does not
+      # exist that day: the night ends at the first instant after the gap.
+      game =
+        generate(
+          game(timezone: "America/New_York", day_start: ~T[02:30:00], day_end: ~T[14:00:00])
+        )
+
+      game = Games.start_game!(game, %{now: ~U[2026-03-08 00:00:00Z]})
+      assert game.state == :night
+      assert game.phase_ends_at == ~U[2026-03-08 07:00:00.000000Z]
+
+      # It falls back at 02:00 EDT on 2026-11-01, so 01:30 happens twice: the
+      # first occurrence (still EDT) wins.
+      game =
+        generate(
+          game(timezone: "America/New_York", day_start: ~T[01:30:00], day_end: ~T[14:00:00])
+        )
+
+      game = Games.start_game!(game, %{now: ~U[2026-11-01 00:00:00Z]})
+      assert game.state == :night
+      assert game.phase_ends_at == ~U[2026-11-01 05:30:00.000000Z]
+    end
+
+    test "now defaults to the current time" do
+      game = generate(game())
+      before = DateTime.utc_now()
+
+      game = Games.start_game!(game)
+
+      assert game.state in [:day, :night]
+      assert DateTime.compare(game.phase_ends_at, before) == :gt
+      assert [%{number: 1, started_at: started_at}] = phases(game)
+      assert DateTime.compare(started_at, before) != :lt
+    end
+
+    test "rejects transitions that do not match the current state" do
+      game = generate(game())
+      now = ~U[2026-06-15 12:00:00Z]
+
+      assert {:error, %Ash.Error.Invalid{errors: [%NoMatchingTransition{}]}} =
+               Games.end_day(game, %{now: now})
+
+      assert {:error, %Ash.Error.Invalid{errors: [%NoMatchingTransition{}]}} =
+               Games.end_night(game, %{now: now})
+
+      game = Games.start_game!(game, %{now: now})
+      assert game.state == :day
+
+      assert {:error, %Ash.Error.Invalid{errors: [%NoMatchingTransition{}]}} =
+               Games.start_game(game, %{now: now})
+
+      assert {:error, %Ash.Error.Invalid{errors: [%NoMatchingTransition{}]}} =
+               Games.end_night(game, %{now: now})
+
+      # a rejected transition writes nothing
+      assert Games.get_game!(game.id).state == :day
+      assert [%{number: 1, kind: :day, ended_at: nil}] = phases(game)
+    end
+
+    defp phases(game) do
+      Games.list_phases!(query: [filter: [game_id: game.id], sort: [number: :asc]])
     end
   end
 

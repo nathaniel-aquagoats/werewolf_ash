@@ -53,6 +53,7 @@ defmodule WerewolfAsh.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
+      {:tz, "~> 0.28"},
       {:bcrypt_elixir, "~> 3.0"},
       {:picosat_elixir, "~> 0.2"},
       {:absinthe_phoenix, "~> 2.0"},

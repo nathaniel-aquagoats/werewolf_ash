@@ -16,6 +16,12 @@ defmodule WerewolfAsh.Games do
       define :get_game, action: :read, get_by: [:id]
       define :get_game_by_join_code, action: :read, get_by: [:join_code]
       define :list_games, action: :read
+
+      # Phase transitions. Each takes an optional `now` in the params map
+      # (`Games.end_day!(game, %{now: dt})`); it defaults to the current time.
+      define :start_game, action: :start
+      define :end_day, action: :end_day
+      define :end_night, action: :end_night
     end
 
     resource WerewolfAsh.Games.Player do
