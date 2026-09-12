@@ -78,7 +78,14 @@ defmodule WerewolfAsh.MixProject do
   end
 
   defp aliases() do
-    [test: ["ash.setup --quiet", "test"], setup: "ash.setup"]
+    [
+      test: ["ash.setup --quiet", "test"],
+      setup: "ash.setup",
+      "graphql.schema": [
+        "absinthe.schema.sdl --schema WerewolfAshWeb.GraphqlSchema mobile/schema.graphql"
+      ],
+      "graphql.codegen": ["graphql.schema", "cmd --cd mobile npm run codegen"]
+    ]
   end
 
   defp elixirc_paths(:test),
