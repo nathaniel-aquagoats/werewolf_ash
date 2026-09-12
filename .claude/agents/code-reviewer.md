@@ -79,8 +79,18 @@ Any failure is a rejection.
 
 If the diff touches anything GraphQL-facing — an Ash resource with a `graphql`
 section, the schema module, a domain's GraphQL config — then
-`mobile/schema.graphql` and files under `mobile/src/gql` must be in the diff.
-If they are not, the coder skipped `mix graphql.codegen`. Rejection.
+`mobile/schema.graphql` must be in the diff. If it is not, the coder skipped the
+schema export. Rejection.
+
+`mobile/src/gql` is different, and its absence is often correct. The mobile
+codegen uses graphql-codegen's client preset (`mobile/codegen.ts`), which emits
+types only for operations the app's own documents use, not for the whole schema.
+A new mutation or field that no mobile screen calls yet leaves `mobile/src/gql`
+byte-identical. Verify rather than assume: in a scratch copy, run
+`mix graphql.codegen` and check whether `mobile/src/gql` changes. Reject only if
+it changes and the diff lacks that change. If the npm half of the command cannot
+run in this environment, say so in the review instead of rejecting, and confirm
+that no file under `mobile/src` references the changed operations.
 
 ## 5. Brittleness — nits only
 

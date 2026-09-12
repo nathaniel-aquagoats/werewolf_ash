@@ -44,8 +44,9 @@ outside your scope, leave it and write it in the PR body.
 2. Use the Ash generators rather than hand-writing resources. After **any**
    resource change run `mix ash.codegen <snake_case_name>` — it is not
    igniter-backed, so no `--yes`. After any GraphQL-facing change run
-   `mix graphql.codegen` and commit `mobile/schema.graphql` and
-   `mobile/src/gql`; the reviewer checks the diff for them.
+   `mix graphql.codegen` and commit `mobile/schema.graphql`, plus `mobile/src/gql` if it changed. It
+   only changes when a mobile screen's own GraphQL documents use the changed
+   operations, so an unchanged `mobile/src/gql` is normal for backend-only work.
 3. Write the tests the spec's `Acceptance` section names, to the test standard
    in `CLAUDE.md`: every public function gets a direct unit test on its own
    contract, every rule gets a test that fails if the rule is deleted, plus one
