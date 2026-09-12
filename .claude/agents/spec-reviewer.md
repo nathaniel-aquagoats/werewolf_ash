@@ -51,6 +51,14 @@ Work through all six. For each, say `pass` or give findings.
 5. **Out of scope is explicit and consistent with siblings.** The section must
    exist and must be non-empty. Anything a sibling bead owns must be listed
    here. If two beads both claim the same work, say which should own it.
+
+   If the spec adds a new action to a resource, check who authorizes it. The
+   policies bead (27w.2) leaves every action it does not name at
+   `authorize_if always()`, so a new action nobody names is open to any
+   caller. If 27w.2 has merged, this spec must add the action's policy
+   itself; if it has not, 27w.2's rules must name the action. A new action
+   covered by neither is a blocking finding. (Caught 2026-09-12: qss.4's
+   separate `:kill` action would have let anyone submit a kill as any wolf.)
 6. **Acceptance names public functions.** Module and arity, not prose. Check it
    against the test standard: every public function the spec introduces or
    changes needs a direct unit test, including changes, validations,
