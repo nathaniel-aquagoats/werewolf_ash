@@ -1,7 +1,6 @@
 import Config
 
 config :werewolf_ash, token_signing_secret: "lrngqyv3t+hJHae+6rfOT+blEue3dH9w"
-config :bcrypt_elixir, log_rounds: 1
 config :werewolf_ash, Oban, testing: :manual
 
 config :werewolf_ash, WerewolfAsh.Repo,

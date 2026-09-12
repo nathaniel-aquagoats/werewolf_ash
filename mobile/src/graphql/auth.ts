@@ -14,16 +14,36 @@ export const CurrentUserQuery = graphql(`
 `);
 
 /**
- * Sign in with an email and password. Mutates server state (a stored token),
- * so it is exposed as a mutation even though the underlying Ash action is a
- * read (`sign_in_with_password`).
+ * Requests a magic-link sign-in token be sent to the given email. Always
+ * reports the same success result whether or not the email is registered,
+ * so it can never be used to enumerate accounts. A first-ever sign-in for
+ * an email registers the account.
  */
-export const SignInWithPasswordMutation = graphql(`
-  mutation SignInWithPassword($email: String!, $password: String!) {
-    signInWithPassword(email: $email, password: $password) {
-      id
-      email
-      token
+export const RequestMagicLinkMutation = graphql(`
+  mutation RequestMagicLink($email: String!) {
+    requestMagicLink(email: $email)
+  }
+`);
+
+/**
+ * Exchanges a magic-link token (from `RequestMagicLinkMutation`) for a
+ * bearer JWT. The token can only be used once.
+ */
+export const SignInWithMagicLinkMutation = graphql(`
+  mutation SignInWithMagicLink($token: String!) {
+    signInWithMagicLink(token: $token) {
+      result {
+        id
+        email
+      }
+      metadata {
+        token
+      }
+      errors {
+        message
+        fields
+        code
+      }
     }
   }
 `);

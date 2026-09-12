@@ -6,19 +6,23 @@ defmodule WerewolfAsh.Accounts do
   graphql do
     queries do
       read_one WerewolfAsh.Accounts.User, :current_user, :current_user
-
-      # Sign in is a read action whose `token` metadata is exposed on the
-      # `UserWithToken` type. It mutates server state (a stored token), so it
-      # is placed under `mutation`.
-      read_one WerewolfAsh.Accounts.User, :sign_in_with_password, :sign_in_with_password do
-        type_name :user_with_token
-        as_mutation? true
-        allow_nil? false
-      end
     end
 
     mutations do
-      create WerewolfAsh.Accounts.User, :register_with_password, :register_with_password
+      # A generic action, not a read: it mutates server state (a stored
+      # token) and never reveals whether the given email matched a user, so
+      # its result is a plain success boolean rather than the user/token.
+      action WerewolfAsh.Accounts.User, :request_magic_link, :request_magic_link do
+        args [:email]
+      end
+
+      # A create action (magic link registration is enabled, so signing in
+      # upserts the user by email): standard create-mutation `result` /
+      # `metadata` / `errors` shape, with the JWT in `metadata { token }`.
+      create WerewolfAsh.Accounts.User, :sign_in_with_magic_link, :sign_in_with_magic_link do
+        args [:token]
+        hide_inputs [:remember_me]
+      end
     end
   end
 

@@ -1,7 +1,7 @@
 defmodule WerewolfAsh.Accounts.BearerToken do
   @moduledoc """
   Resolves an AshAuthentication bearer token (as issued by
-  `registerWithPassword` / `signInWithPassword`) to the `User` it belongs to.
+  `requestMagicLink` / `signInWithMagicLink`) to the `User` it belongs to.
 
   Used by the GraphQL socket, where there is no `Plug.Conn` for
   `AshAuthentication.Plug.Helpers.retrieve_from_bearer/3` (which the HTTP
@@ -15,7 +15,9 @@ defmodule WerewolfAsh.Accounts.BearerToken do
     * the `sub` claim is exchanged for a user via `AshAuthentication.subject_to_user/2`
   """
 
-  alias AshAuthentication.{Info, Jwt, TokenResource}
+  alias AshAuthentication.Info
+  alias AshAuthentication.Jwt
+  alias AshAuthentication.TokenResource.Actions
 
   @otp_app :werewolf_ash
 
@@ -51,7 +53,7 @@ defmodule WerewolfAsh.Accounts.BearerToken do
     if Info.authentication_tokens_require_token_presence_for_authentication?(resource) do
       with {:ok, token_resource} <- Info.authentication_tokens_token_resource(resource),
            {:ok, [_token_record]} <-
-             TokenResource.Actions.get_token(token_resource, %{"jti" => jti, "purpose" => "user"}) do
+             Actions.get_token(token_resource, %{"jti" => jti, "purpose" => "user"}) do
         :ok
       else
         _ -> :error

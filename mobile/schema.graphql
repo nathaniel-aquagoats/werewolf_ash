@@ -3,13 +3,12 @@ schema {
   query: RootQueryType
 }
 
-type RegisterWithPasswordMetadata {
-  "A JWT that can be used to authenticate the user."
+type SignInWithMagicLinkMetadata {
   token: String!
 }
 
-"The result of the :register_with_password mutation"
-type RegisterWithPasswordResult {
+"The result of the :sign_in_with_magic_link mutation"
+type SignInWithMagicLinkResult {
   "The successful result of the mutation"
   result: User
 
@@ -17,17 +16,7 @@ type RegisterWithPasswordResult {
   errors: [MutationError!]!
 
   "Metadata produced by the mutation"
-  metadata: RegisterWithPasswordMetadata
-}
-
-input RegisterWithPasswordInput {
-  email: String!
-
-  "The proposed password for the user, in plain text."
-  password: String!
-
-  "The proposed password for the user (again), in plain text."
-  passwordConfirmation: String!
+  metadata: SignInWithMagicLinkMetadata
 }
 
 input UserFilterEmail {
@@ -73,15 +62,6 @@ input UserFilterInput {
   email: UserFilterEmail
 }
 
-type UserWithToken {
-  id: ID!
-
-  email: String!
-
-  "A JWT that can be used to authenticate the user."
-  token: String!
-}
-
 type User {
   id: ID!
   email: String!
@@ -117,20 +97,20 @@ type RootQueryType {
 }
 
 type RootMutationType {
-  "Register a new user with a email and password."
-  registerWithPassword(input: RegisterWithPasswordInput!): RegisterWithPasswordResult!
+  """
+  Requests a magic-link sign-in token for the given email and logs it
+  (dev sender; real delivery is a separate piece of work). Always
+  reports the same success result whether or not the email belongs to
+  a registered user, so the response can never be used to enumerate
+  accounts.
+  """
+  requestMagicLink(email: String!): Boolean!
 
-  "Attempt to sign in using a email and password."
-  signInWithPassword(
-    "A filter to limit the results"
-    filter: UserFilterInput
-
-    "The email to use for retrieving the user."
-    email: String!
-
-    "The password to check for the matching user."
-    password: String!
-  ): UserWithToken!
+  "Sign in or register a user with magic link."
+  signInWithMagicLink(
+    "The token from the magic link that was sent to the user"
+    token: String!
+  ): SignInWithMagicLinkResult!
 }
 
 """

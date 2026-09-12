@@ -54,6 +54,10 @@ defmodule WerewolfAsh.MixProject do
   defp deps do
     [
       {:tz, "~> 0.28"},
+      # ash_authentication 4.14.2 declares this as a hard (non-optional)
+      # dependency at the Hex package level (AshAuthentication.BcryptProvider
+      # is compiled unconditionally), so it stays even though we no longer
+      # use the password strategy that would otherwise be its only caller.
       {:bcrypt_elixir, "~> 3.0"},
       {:picosat_elixir, "~> 0.2"},
       {:absinthe_phoenix, "~> 2.0"},

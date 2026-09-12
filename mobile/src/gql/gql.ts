@@ -15,11 +15,13 @@ import { TypedDocumentNode as DocumentNode } from '@graphql-typed-document-node/
  */
 type Documents = {
     "\n  query CurrentUser {\n    currentUser {\n      id\n      email\n    }\n  }\n": typeof types.CurrentUserDocument,
-    "\n  mutation SignInWithPassword($email: String!, $password: String!) {\n    signInWithPassword(email: $email, password: $password) {\n      id\n      email\n      token\n    }\n  }\n": typeof types.SignInWithPasswordDocument,
+    "\n  mutation RequestMagicLink($email: String!) {\n    requestMagicLink(email: $email)\n  }\n": typeof types.RequestMagicLinkDocument,
+    "\n  mutation SignInWithMagicLink($token: String!) {\n    signInWithMagicLink(token: $token) {\n      result {\n        id\n        email\n      }\n      metadata {\n        token\n      }\n      errors {\n        message\n        fields\n        code\n      }\n    }\n  }\n": typeof types.SignInWithMagicLinkDocument,
 };
 const documents: Documents = {
     "\n  query CurrentUser {\n    currentUser {\n      id\n      email\n    }\n  }\n": types.CurrentUserDocument,
-    "\n  mutation SignInWithPassword($email: String!, $password: String!) {\n    signInWithPassword(email: $email, password: $password) {\n      id\n      email\n      token\n    }\n  }\n": types.SignInWithPasswordDocument,
+    "\n  mutation RequestMagicLink($email: String!) {\n    requestMagicLink(email: $email)\n  }\n": types.RequestMagicLinkDocument,
+    "\n  mutation SignInWithMagicLink($token: String!) {\n    signInWithMagicLink(token: $token) {\n      result {\n        id\n        email\n      }\n      metadata {\n        token\n      }\n      errors {\n        message\n        fields\n        code\n      }\n    }\n  }\n": types.SignInWithMagicLinkDocument,
 };
 
 /**
@@ -43,7 +45,11 @@ export function graphql(source: "\n  query CurrentUser {\n    currentUser {\n   
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function graphql(source: "\n  mutation SignInWithPassword($email: String!, $password: String!) {\n    signInWithPassword(email: $email, password: $password) {\n      id\n      email\n      token\n    }\n  }\n"): (typeof documents)["\n  mutation SignInWithPassword($email: String!, $password: String!) {\n    signInWithPassword(email: $email, password: $password) {\n      id\n      email\n      token\n    }\n  }\n"];
+export function graphql(source: "\n  mutation RequestMagicLink($email: String!) {\n    requestMagicLink(email: $email)\n  }\n"): (typeof documents)["\n  mutation RequestMagicLink($email: String!) {\n    requestMagicLink(email: $email)\n  }\n"];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n  mutation SignInWithMagicLink($token: String!) {\n    signInWithMagicLink(token: $token) {\n      result {\n        id\n        email\n      }\n      metadata {\n        token\n      }\n      errors {\n        message\n        fields\n        code\n      }\n    }\n  }\n"): (typeof documents)["\n  mutation SignInWithMagicLink($token: String!) {\n    signInWithMagicLink(token: $token) {\n      result {\n        id\n        email\n      }\n      metadata {\n        token\n      }\n      errors {\n        message\n        fields\n        code\n      }\n    }\n  }\n"];
 
 export function graphql(source: string) {
   return (documents as any)[source] ?? {};

@@ -19,6 +19,13 @@ config :werewolf_ash,
   ecto_repos: [WerewolfAsh.Repo],
   ash_domains: [WerewolfAsh.Games, WerewolfAsh.Accounts]
 
+# The magic_link strategy's sign-in action is registration-enabled (a create
+# action via `AshAuthentication.Strategy.MagicLink.SignInChange`), which
+# always errors on an invalid token; this setting only matters for the
+# read-based sign-in used when `registration_enabled?` is false. Set for
+# correctness/future-proofing and to silence the strategy's compile warning.
+config :ash_authentication, return_error_on_invalid_magic_link_token?: true
+
 config :werewolf_ash, WerewolfAshWeb.Endpoint,
   url: [host: "localhost"],
   adapter: Bandit.PhoenixAdapter,
@@ -27,11 +34,11 @@ config :werewolf_ash, WerewolfAshWeb.Endpoint,
 
 config :phoenix, :json_library, Jason
 
-# Credentials travel as GraphQL variables under client-chosen names, so
-# name-based filtering of a single "password" key is not enough: redact the
-# whole variables map from Phoenix request logs and disable Absinthe's own
-# query/variables logging.
-config :phoenix, :filter_parameters, ["password", "variables"]
+# Sensitive values (magic-link tokens, bearer tokens, ...) travel as GraphQL
+# variables under client-chosen names, so name-based filtering of a fixed set
+# of keys is not enough: redact the whole variables map from Phoenix request
+# logs and disable Absinthe's own query/variables logging.
+config :phoenix, :filter_parameters, ["variables"]
 config :absinthe, log: false
 
 # These enable behaviors that will become the default in the next major
