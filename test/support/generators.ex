@@ -10,6 +10,7 @@ defmodule WerewolfAsh.Generators do
   alias WerewolfAsh.Accounts.User
   alias WerewolfAsh.Games
   alias WerewolfAsh.Games.Game
+  alias WerewolfAsh.Games.Phase
   alias WerewolfAsh.Games.Player
 
   def user(opts \\ []) do
@@ -62,6 +63,24 @@ defmodule WerewolfAsh.Generators do
         user_id: StreamData.repeatedly(fn -> generate(user()).id end)
       ],
       after_action: fn player -> Games.update_player!(player, %{role: role}) end,
+      overrides: opts
+    )
+  end
+
+  @doc """
+  A phase of a game. Defaults to the game's first day; pass `game_id:`,
+  `kind:` and/or `number:` to place it precisely (e.g. a later phase, or a
+  night).
+  """
+  def phase(opts \\ []) do
+    changeset_generator(
+      Phase,
+      :create,
+      uses: [game: game()],
+      defaults: fn %{game: game} ->
+        game = generate(game)
+        [game_id: game.id, kind: :day, number: 1]
+      end,
       overrides: opts
     )
   end

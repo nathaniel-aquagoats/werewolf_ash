@@ -569,16 +569,18 @@ defmodule WerewolfAsh.GamesTest do
     test "allows one action per actor, phase and type", ctx do
       Games.create_action!(ctx.phase.id, ctx.alice.id, ctx.bob.id, :vote)
 
-      assert {:error, %Ash.Error.Invalid{errors: [%{message: "has already been taken"}]}} =
+      assert {:error, %Ash.Error.Invalid{errors: [%{field: :phase_id}]}} =
                Games.create_action(ctx.phase.id, ctx.alice.id, ctx.alice.id, :vote)
 
       # a different type in the same phase is fine
+      Games.update_player!(ctx.alice, %{role: :bodyguard})
+
       assert %{type: :protect} =
                Games.create_action!(ctx.phase.id, ctx.alice.id, ctx.bob.id, :protect)
 
       # and so is the same type in another phase
-      night = Games.create_phase!(ctx.game.id, :night, 2)
-      assert %{type: :vote} = Games.create_action!(night.id, ctx.alice.id, ctx.bob.id, :vote)
+      day2 = Games.create_phase!(ctx.game.id, :day, 2)
+      assert %{type: :vote} = Games.create_action!(day2.id, ctx.alice.id, ctx.bob.id, :vote)
     end
 
     test "rejects unknown types", ctx do
