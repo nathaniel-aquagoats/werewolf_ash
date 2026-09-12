@@ -3,6 +3,7 @@ defmodule WerewolfAsh.GamesTest do
 
   import WerewolfAsh.Generators
 
+  alias Ash.Changeset
   alias AshStateMachine.Errors.NoMatchingTransition
   alias WerewolfAsh.Games
 
@@ -101,8 +102,8 @@ defmodule WerewolfAsh.GamesTest do
 
       assert_raise Ash.Error.Invalid, fn ->
         game
-        |> Ash.Changeset.for_update(:update, %{})
-        |> Ash.Changeset.force_change_attribute(:state, :limbo)
+        |> Changeset.for_update(:update, %{})
+        |> Changeset.force_change_attribute(:state, :limbo)
         |> Ash.update!()
       end
     end

@@ -14,6 +14,8 @@ defmodule WerewolfAsh.Games.Game.Changes.AdvancePhase do
 
   use Ash.Resource.Change
 
+  alias Ash.Changeset
+  alias Ash.Context
   alias WerewolfAsh.Games
   alias WerewolfAsh.Games.Game.Clock
 
@@ -30,20 +32,20 @@ defmodule WerewolfAsh.Games.Game.Changes.AdvancePhase do
 
   @impl true
   def change(changeset, opts, context) do
-    now = Ash.Changeset.get_argument(changeset, :now)
+    now = Changeset.get_argument(changeset, :now)
     game = changeset.data
 
     with {:ok, kind} <- target(opts[:to], game, now),
          {:ok, ends_at} <- Clock.next_boundary(game, kind, now) do
       changeset
       |> AshStateMachine.transition_state(kind)
-      |> Ash.Changeset.force_change_attribute(:phase_ends_at, ends_at)
-      |> Ash.Changeset.after_action(fn _changeset, game ->
-        open_next_phase(game, kind, now, Ash.Context.to_opts(context))
+      |> Changeset.force_change_attribute(:phase_ends_at, ends_at)
+      |> Changeset.after_action(fn _changeset, game ->
+        open_next_phase(game, kind, now, Context.to_opts(context))
       end)
     else
       {:error, reason} ->
-        Ash.Changeset.add_error(changeset,
+        Changeset.add_error(changeset,
           field: :timezone,
           message: "cannot compute the next phase boundary: %{reason}",
           vars: [reason: inspect(reason)]

@@ -9,6 +9,9 @@ defmodule WerewolfAsh.Games.Game.Validations.KnownTimezone do
 
   use Ash.Resource.Validation
 
+  alias Ash.Changeset
+  alias Ash.Expr
+
   @impl true
   def init(opts) do
     if is_atom(opts[:attribute]) and not is_nil(opts[:attribute]) do
@@ -22,7 +25,7 @@ defmodule WerewolfAsh.Games.Game.Validations.KnownTimezone do
   def validate(changeset, opts, _context) do
     attribute = opts[:attribute]
 
-    case Ash.Changeset.fetch_change(changeset, attribute) do
+    case Changeset.fetch_change(changeset, attribute) do
       {:ok, zone} -> check(zone, attribute)
       :error -> :ok
     end
@@ -36,7 +39,7 @@ defmodule WerewolfAsh.Games.Game.Validations.KnownTimezone do
 
     case Keyword.fetch(changeset.atomics, attribute) do
       {:ok, zone} ->
-        if Ash.Expr.expr?(zone) do
+        if Expr.expr?(zone) do
           {:not_atomic, "cannot check an atomic expression against the time zone database"}
         else
           check(zone, attribute)

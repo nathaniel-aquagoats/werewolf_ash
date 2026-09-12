@@ -8,12 +8,13 @@ defmodule WerewolfAsh.Games.Message.Preparations.VisibleTo do
 
   import Ash.Expr
 
+  alias Ash.Query
   alias WerewolfAsh.Games.Message.Visibility
 
   @impl true
   def prepare(query, _opts, _context) do
-    player_id = Ash.Query.get_argument(query, :player_id)
+    player_id = Query.get_argument(query, :player_id)
 
-    Ash.Query.do_filter(query, Visibility.visible_to(expr(id == ^player_id)))
+    Query.do_filter(query, Visibility.visible_to(expr(id == ^player_id)))
   end
 end

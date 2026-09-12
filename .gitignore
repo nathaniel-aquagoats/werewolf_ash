@@ -28,3 +28,6 @@ werewolf_ash-*.tar
 *.db
 .beads-credential-key
 .beads/proxieddb/
+
+# Claude Code agent worktrees
+/.claude/worktrees/

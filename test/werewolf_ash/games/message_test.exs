@@ -3,10 +3,12 @@ defmodule WerewolfAsh.Games.MessageTest do
 
   import WerewolfAsh.Generators
 
-  require Ash.Query
-
+  alias Ash.Query
+  alias Ash.UUID
   alias WerewolfAsh.Games
   alias WerewolfAsh.Games.Message
+
+  require Query
 
   # One game with a player of each kind we care about, plus a player in some
   # other game to make sure nothing leaks across games.
@@ -86,7 +88,7 @@ defmodule WerewolfAsh.Games.MessageTest do
       Games.send_message(ctx.game.id, ctx.outsider.id, :village, "psst")
       |> assert_rejected(:author_id, "must be a player in this game")
 
-      Games.send_message(ctx.game.id, Ash.UUID.generate(), :village, "boo")
+      Games.send_message(ctx.game.id, UUID.generate(), :village, "boo")
       |> assert_rejected(:author_id, "must be a player in this game")
     end
 
@@ -145,7 +147,7 @@ defmodule WerewolfAsh.Games.MessageTest do
 
     test "messages never cross games, and an unknown player sees nothing", ctx do
       assert [%{body: "another game"}] = Games.list_messages_visible_to!(ctx.outsider.id)
-      assert Games.list_messages_visible_to!(Ash.UUID.generate()) == []
+      assert Games.list_messages_visible_to!(UUID.generate()) == []
     end
 
     test "messages come back oldest first", ctx do
@@ -182,7 +184,7 @@ defmodule WerewolfAsh.Games.MessageTest do
 
   defp messages_in(game) do
     Message
-    |> Ash.Query.filter(game_id == ^game.id)
+    |> Query.filter(game_id == ^game.id)
     |> Ash.read!()
   end
 end

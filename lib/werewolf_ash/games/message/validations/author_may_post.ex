@@ -13,13 +13,14 @@ defmodule WerewolfAsh.Games.Message.Validations.AuthorMayPost do
 
   use Ash.Resource.Validation
 
+  alias Ash.Changeset
   alias WerewolfAsh.Games.Player
 
   @impl true
   def validate(changeset, _opts, _context) do
-    game_id = Ash.Changeset.get_attribute(changeset, :game_id)
-    author_id = Ash.Changeset.get_attribute(changeset, :author_id)
-    channel = Ash.Changeset.get_attribute(changeset, :channel)
+    game_id = Changeset.get_attribute(changeset, :game_id)
+    author_id = Changeset.get_attribute(changeset, :author_id)
+    channel = Changeset.get_attribute(changeset, :channel)
 
     # Missing required attributes are reported by the action itself.
     if is_nil(game_id) or is_nil(author_id) or is_nil(channel) do

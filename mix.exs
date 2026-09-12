@@ -71,7 +71,8 @@ defmodule WerewolfAsh.MixProject do
       {:ash_oban, "~> 0.8"},
       {:ash_postgres, "~> 2.0"},
       {:ash, "~> 3.0"},
-      {:igniter, "~> 0.6", only: [:dev, :test]}
+      {:igniter, "~> 0.6", only: [:dev, :test]},
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
       # {:dep_from_hexpm, "~> 0.3.0"},
       # {:dep_from_git, git: "https://github.com/elixir-lang/my_dep.git", tag: "0.1.0"}
     ]
@@ -84,7 +85,8 @@ defmodule WerewolfAsh.MixProject do
       "graphql.schema": [
         "absinthe.schema.sdl --schema WerewolfAshWeb.GraphqlSchema mobile/schema.graphql"
       ],
-      "graphql.codegen": ["graphql.schema", "cmd --cd mobile npm run codegen"]
+      "graphql.codegen": ["graphql.schema", "cmd --cd mobile npm run codegen"],
+      lint: ["format --check-formatted", "credo --strict"]
     ]
   end
 
