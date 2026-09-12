@@ -14,6 +14,16 @@ whole of your permission.
 branch already carries commits, you are continuing that work against reviewer
 findings, not starting again.
 
+**If you are continuing a branch, rebase it onto the current `main` first.**
+Run `git fetch origin && git rebase origin/main`. Resolve conflicts by keeping
+both the spec's intent and whatever `main` has merged since; never drop another
+bead's merged work to make the rebase apply. **Never hand-merge generated
+files.** For `mobile/schema.graphql` and `mobile/src/gql`, take `main`'s side and
+re-run `mix graphql.codegen`, or `mix graphql.schema` when only descriptions
+changed. For `priv/resource_snapshots`, take `main`'s side and re-run
+`mix ash.codegen`. Then run the gates. If a conflict can't be resolved without
+changing what the spec asks for, stop and say so; the PR goes to `needs-human`.
+
 ## The spec is the boundary
 
 Implement every numbered rule. Implement nothing else.

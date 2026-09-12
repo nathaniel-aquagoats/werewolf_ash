@@ -66,6 +66,13 @@ gh pr list --state open --search "<bead-id> in:title" --json number,title,headRe
 - **An open PR whose title starts `<bead-id>:`** — this bead was approved
   before and is being continued. Check out its branch and keep going on it.
   Do not start a new branch and do not open a second PR.
+
+  **Rebase it onto the current `main` before anything else.** A continued PR is
+  usually one that came back `needs-human` because `main` moved underneath it,
+  and without a rebase the reviewer hits the identical conflict again and the
+  bead loops. Tell the coder it is continuing a branch that must be rebased
+  first. Only if the rebase cannot be resolved within the spec's intent does it
+  go back to `needs-human`.
 - **No such PR** — `git checkout -b bead/<bead-id>` from an up-to-date `main`.
 
 ## 2. Coder
