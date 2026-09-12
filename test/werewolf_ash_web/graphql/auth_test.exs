@@ -1,3 +1,15 @@
+defmodule WerewolfAshWeb.Graphql.AuthTest.FailingMailerAdapter do
+  @moduledoc """
+  A `Swoosh.Adapter` that always fails delivery, for exercising
+  `SendMagicLinkEmail.send/3`'s failed-delivery path (Rule 8) without a real
+  provider.
+  """
+
+  use Swoosh.Adapter
+
+  def deliver(_email, _config), do: {:error, :boom}
+end
+
 defmodule WerewolfAshWeb.Graphql.AuthTest do
   @moduledoc """
   Exercises the magic-link auth flow end to end through the GraphQL layer
@@ -8,6 +20,8 @@ defmodule WerewolfAshWeb.Graphql.AuthTest do
   use WerewolfAshWeb.ConnCase, async: false
 
   import ExUnit.CaptureIO
+  import ExUnit.CaptureLog
+  import Swoosh.TestAssertions
   # `connect/2,3` clash between the HTTP verb helper and the socket helper
   import Phoenix.ConnTest, except: [connect: 2, connect: 3]
   import Phoenix.ChannelTest, only: [connect: 2, connect: 3]
@@ -15,6 +29,7 @@ defmodule WerewolfAshWeb.Graphql.AuthTest do
   alias WerewolfAsh.Accounts.BearerToken
   alias WerewolfAsh.Accounts.User
   alias WerewolfAsh.Accounts.User.Senders.SendMagicLinkEmail
+  alias WerewolfAshWeb.Graphql.AuthTest.FailingMailerAdapter
 
   @request_magic_link """
   mutation RequestMagicLink($email: String!) {
@@ -249,6 +264,90 @@ defmodule WerewolfAshWeb.Graphql.AuthTest do
       capture_io(fn -> SendMagicLinkEmail.send("new@example.com", "another-token", []) end)
 
       assert_received {:magic_link_token, "new@example.com", "another-token"}
+    end
+
+    test "delivers the email to the resolved recipient with the deep link, not the removed web path" do
+      capture_io(fn -> SendMagicLinkEmail.send("deliver@example.com", "deliver-token", []) end)
+
+      assert_email_sent(fn email ->
+        email.to == [{"", "deliver@example.com"}] and
+          String.contains?(email.text_body, "deliver-token") and
+          not String.contains?(email.text_body, "/auth/user/magic_link")
+      end)
+    end
+
+    test "the deep-link base URL is read at call time and can be overridden without recompiling" do
+      original = Application.fetch_env!(:werewolf_ash, :magic_link_deep_link_base_url)
+      Application.put_env(:werewolf_ash, :magic_link_deep_link_base_url, "sentinel://base")
+
+      on_exit(fn ->
+        Application.put_env(:werewolf_ash, :magic_link_deep_link_base_url, original)
+      end)
+
+      capture_io(fn -> SendMagicLinkEmail.send("override@example.com", "override-token", []) end)
+
+      assert_email_sent(fn email ->
+        String.contains?(email.text_body, "sentinel://base?token=override-token")
+      end)
+    end
+
+    test "the from address is read at call time and can be overridden without recompiling" do
+      original = Application.fetch_env!(:werewolf_ash, :magic_link_from_address)
+      Application.put_env(:werewolf_ash, :magic_link_from_address, "sentinel@example.com")
+
+      on_exit(fn ->
+        Application.put_env(:werewolf_ash, :magic_link_from_address, original)
+      end)
+
+      capture_io(fn -> SendMagicLinkEmail.send("from-test@example.com", "from-token", []) end)
+
+      assert_email_sent(fn email -> email.from == {"", "sentinel@example.com"} end)
+    end
+
+    test "still logs the token and deep link to the console, not the removed web path" do
+      output =
+        capture_io(fn -> SendMagicLinkEmail.send("console@example.com", "console-token", []) end)
+
+      assert output =~ "console-token"
+      assert output =~ SendMagicLinkEmail.magic_link_url("console-token")
+      refute output =~ "/auth/user/magic_link"
+    end
+
+    test "a failed delivery still returns :ok and logs an error" do
+      original = Application.fetch_env!(:werewolf_ash, WerewolfAsh.Mailer)
+      Application.put_env(:werewolf_ash, WerewolfAsh.Mailer, adapter: FailingMailerAdapter)
+
+      on_exit(fn ->
+        Application.put_env(:werewolf_ash, WerewolfAsh.Mailer, original)
+      end)
+
+      log =
+        capture_log(fn ->
+          capture_io(fn ->
+            assert :ok = SendMagicLinkEmail.send("fail@example.com", "fail-token", [])
+          end)
+        end)
+
+      assert log =~ "[error]"
+    end
+  end
+
+  describe "SendMagicLinkEmail.magic_link_url/1 (unit)" do
+    test "appends the token as a query parameter to the configured base URL" do
+      base_url = Application.fetch_env!(:werewolf_ash, :magic_link_deep_link_base_url)
+
+      assert SendMagicLinkEmail.magic_link_url("a-token") == "#{base_url}?token=a-token"
+    end
+
+    test "reads the base URL at call time, so it reflects an override" do
+      original = Application.fetch_env!(:werewolf_ash, :magic_link_deep_link_base_url)
+      Application.put_env(:werewolf_ash, :magic_link_deep_link_base_url, "sentinel://other")
+
+      on_exit(fn ->
+        Application.put_env(:werewolf_ash, :magic_link_deep_link_base_url, original)
+      end)
+
+      assert SendMagicLinkEmail.magic_link_url("a-token") == "sentinel://other?token=a-token"
     end
   end
 

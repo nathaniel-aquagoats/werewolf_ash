@@ -17,3 +17,8 @@ config :werewolf_ash, WerewolfAshWeb.Endpoint,
   secret_key_base: "dev-only-secret-key-base-dev-only-secret-key-base-dev-only-secret-key-base"
 
 config :ash, policies: [show_policy_breakdowns?: true]
+
+# Non-network adapter: dev only needs the console log `SendMagicLinkEmail`
+# already prints, never a real send.
+config :werewolf_ash, WerewolfAsh.Mailer, adapter: Swoosh.Adapters.Test
+config :swoosh, :api_client, false

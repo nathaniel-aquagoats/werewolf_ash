@@ -17,3 +17,6 @@ config :werewolf_ash, WerewolfAshWeb.Endpoint,
   secret_key_base: "test-only-secret-key-base-test-only-secret-key-base-test-only-secret-key"
 
 config :ash, policies: [show_policy_breakdowns?: true], disable_async?: true
+
+config :werewolf_ash, WerewolfAsh.Mailer, adapter: Swoosh.Adapters.Test
+config :swoosh, :api_client, false
