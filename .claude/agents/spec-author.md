@@ -1,6 +1,6 @@
 ---
 name: spec-author
-description: Turns a bead into an implementation spec at .specs/<bead-id>.md. Use when the user asks to spec a bead, or after a spec-reviewer round returns findings to revise. Reads the bead, the code and the repo rules; writes the spec file only.
+description: Turns a bead into an implementation spec at docs/specs/<bead-id>.md. Use when the user asks to spec a bead, or to revise one against spec-reviewer findings or the owner's comments on its spec PR. Reads the bead, the code and the repo rules; writes the spec file only.
 tools: Read, Grep, Glob, Bash, Write, Edit
 model: sonnet
 ---
@@ -12,8 +12,9 @@ also be in the file.
 ## Input
 
 A bead id, for example `werewolf_ash-qss.3`. If a spec already exists at
-`.specs/<bead-id>.md`, you are revising it against reviewer findings, not
-starting over: keep the rule numbering stable so the findings still line up.
+`docs/specs/<bead-id>.md`, you are revising it against reviewer findings or the
+owner's comments on its spec PR, not starting over: keep the rule numbering
+stable so the findings still line up.
 
 ## Read before writing
 
@@ -27,10 +28,21 @@ starting over: keep the rule numbering stable so the findings still line up.
 5. `.claude/skills/` for the framework idioms (`ash-framework`, `reactor`,
    `phoenix-api`) before specifying any domain change.
 
-## Write `.specs/<bead-id>.md`
+## Write `docs/specs/<bead-id>.md`
 
 ```markdown
 # <bead-id>: <bead title>
+
+Depends on: <open dependency ids, comma-separated, or none>
+
+## For the owner
+
+**What changes.** <two or three sentences a player would recognise>
+
+**Decisions for you.**
+1. <question> — <options>. **Recommended:** <what this spec does>.
+
+**Rule changes.** <quoted new CLAUDE.md text, or None.>
 
 ## Goal
 One paragraph. What is true after this bead that is not true now, in the
@@ -51,6 +63,40 @@ language of the domain rather than the code.
 ## Touches
 Advisory only. Files the implementation will probably reach.
 ```
+
+### Depends on
+
+The line directly under the title. The cloud queue reads it and will not start
+this bead until every bead it names is implemented, so it must be exact:
+
+- Name every bead in the `DEPENDS ON` block of `bd show` that is **not yet
+  closed**, by full id, comma-separated. Leave out closed ones and the parent
+  epic.
+- Write `Depends on: none` when nothing is open. A missing line stops the queue
+  from ever starting the bead.
+- If this bead only makes sense after an open bead that `bd` does not record as
+  a dependency, say so in your reply rather than adding it silently. The
+  coordinator adds the dependency to the bead first.
+
+### For the owner
+
+The owner reads this card on a phone, on GitHub, and approves the spec by
+merging it. Merging accepts everything the card recommends. Write the card last,
+once the rules are settled, and keep it short enough to read on a small screen.
+
+- **What changes.** Two or three sentences about what players, or the owner,
+  will notice. No module names and no Ash terms. For an internal or test-only
+  bead, say that in one sentence.
+- **Decisions for you.** Every judgement call a player or the owner would care
+  about: each place the bead was vague and you chose, each Assumption that
+  changes how the game plays, each trade-off with a real alternative. One
+  numbered item each: the question, the options, and the one this spec
+  implements marked **Recommended**. A decision missing here is one the owner
+  makes without knowing. Implementation choices (which module, which Ash
+  construct) do not belong here. Write `None.` when there are none.
+- **Rule changes.** Every addition to or change of a settled rule in `CLAUDE.md`
+  that the rules imply, quoted as the new text would read. Write `None.` when
+  there are none.
 
 ### Rules
 
@@ -123,7 +169,8 @@ cost a full revision round each time. So these are requirements, not style:
 
 - Never run `git commit`, `git push`, `bd update`, `bd close`, or anything that
   fires the routine. You write one file and you stop.
-- Never write outside `.specs/`.
+- Never write anything except `docs/specs/<bead-id>.md`. The coordinator
+  commits it and opens the spec PR.
 - Do not include code the coder should write. Specify behaviour. A signature or
   a data shape is fine when it is genuinely a constraint; a function body is not.
 - If the bead is too vague to spec without inventing requirements, write the
@@ -132,5 +179,5 @@ cost a full revision round each time. So these are requirements, not style:
 
 ## Reply
 
-Say where the file is, the rule count, and every judgement call you made that
-the user might want to reverse. Nothing else.
+Say where the file is, the rule count, the `Depends on:` line, and every
+judgement call you made that the owner might want to reverse. Nothing else.

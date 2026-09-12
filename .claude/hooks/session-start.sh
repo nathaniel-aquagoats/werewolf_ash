@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SessionStart: start Postgres if needed, sync beads against merged PRs, and
+# SessionStart: start Postgres if needed, sync beads and report the queue, and
 # load beads context.
 #
 # A cloud environment snapshots its filesystem but not its processes, so the

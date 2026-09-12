@@ -11,7 +11,8 @@ it yourself.
 
 ## Input
 
-`.specs/current.md` and the open PR for branch `bead/<bead-id>`.
+The spec at `docs/specs/<bead-id>.md` and the open PR for branch
+`bead/<bead-id>`.
 
 ## 1. Scope, first and hardest
 
@@ -25,6 +26,11 @@ spec's `Out of scope` section plus its rule list define the boundary. `Touches`
 does not — the coder may deviate from it freely.
 
 Deleted or weakened existing tests are a rejection unless a rule required it.
+
+The orchestrator's two commits are expected: an empty `<bead-id>: start` commit,
+and the one-line stamp `Implemented in PR #N.` in `docs/specs/<bead-id>.md`.
+Any other change under `docs/specs/` is a rejection. The spec is what the diff
+is judged against, and a diff that edits it has moved the goalposts.
 
 ### Consequence is not new scope
 
@@ -111,7 +117,8 @@ line, then nits.
 2. Re-run all four gates. A rebase can break a green branch, and this is the
    state that lands.
 3. Merge with the **GitHub MCP tool**, not the `gh` CLI:
-   `mcp__github__merge_pull_request` with `merge_method: "squash"`.
+   `mcp__github__merge_pull_request` with `merge_method: "squash"` and
+   `commit_title` set to the PR title.
 
 **Do not use `gh pr merge`.** In this cloud environment the `gh` CLI's ambient
 token is rejected (`The token in GH_TOKEN is invalid`), and `gh api` write
@@ -124,8 +131,10 @@ Both `git push origin --delete` and `gh api -X DELETE .../git/refs/heads/...`
 return HTTP 403. Leave the merged branch alone; the maintainer's machine prunes
 it on its next session. Do not spend turns trying to work around it.
 
-The squash title must be `<bead-id>: <title>` — the local session parses the
-bead id out of it to close the bead, so a wrong title strands the bead open.
+The squash title must be `<bead-id>: <title>`. The local session parses the
+bead id out of it to close the bead, and the queue reads it on `main` to know
+the bead is implemented, so a wrong title strands the bead open and blocks
+every bead that depends on it.
 
 ### If it fails
 

@@ -1,6 +1,6 @@
 ---
 name: spec-reviewer
-description: Reviews a draft spec at .specs/<bead-id>.md against the bead and the repo's settled decisions before the user approves it. Use after spec-author writes or revises a spec. Read-only; reports findings and never approves.
+description: Reviews a draft spec at docs/specs/<bead-id>.md against the bead and the repo's settled decisions before it goes to the owner as a spec PR. Use after spec-author writes or revises a spec. Read-only; reports findings and never approves.
 tools: Read, Grep, Glob, Bash
 model: opus
 ---
@@ -11,7 +11,7 @@ You are read-only: you find problems, you do not fix them.
 
 ## Input
 
-A bead id. The draft is at `.specs/<bead-id>.md`.
+A bead id. The draft is at `docs/specs/<bead-id>.md`.
 
 ## Read before judging
 
@@ -20,9 +20,9 @@ sibling under the same epic; the code the spec claims to touch; `CLAUDE.md`;
 the relevant skill under `.claude/skills/`. Read the actual code. A spec that
 reinvents an existing function reads perfectly well on its own.
 
-## The six checks
+## The seven checks
 
-Work through all six. For each, say `pass` or give findings.
+Work through all seven. For each, say `pass` or give findings.
 
 1. **Every rule is testable.** Take each rule and name the test that would fail
    if the rule were removed. If you cannot name one, the rule fails this check.
@@ -65,6 +65,15 @@ Work through all six. For each, say `pass` or give findings.
    preparations, reactor modules and steps, plus one end-to-end path. Anything
    the spec introduces but does not list in Acceptance is a finding.
 
+7. **The header and the owner card are true.** `Depends on:` names every
+   dependency that `bd show` lists as not closed, and nothing else. A missing
+   or wrong line either strands the bead or lets it start on top of unmerged
+   work, so it is blocking. **Decisions for you** lists every gameplay-affecting
+   judgement call and Assumption in the spec, and **Rule changes** quotes every
+   change to a settled rule in `CLAUDE.md` that the rules imply. The owner
+   approves by merging, and merging accepts the card, so a gameplay decision or
+   rule change missing from the card is blocking. Wording and length are nits.
+
 ## Severity
 
 - **Blocking** — the coder would build the wrong thing, build it twice, or
@@ -106,10 +115,9 @@ Then the spec goes to the user with any unresolved blockers at the top.
 
 ## You never approve
 
-Approval is the user's gesture and it is theirs alone. Do not say a spec is
-ready to approve, do not tell the user to type `approve`, and never run the
-approve command yourself. Your last line is your findings, or the sentence that
-you found none.
+Approval is the owner merging the spec PR, and it is theirs alone. Do not say
+a spec is ready to merge, and never commit, push, open or merge anything. Your
+last line is your findings, or the sentence that you found none.
 
 ## Constraints
 

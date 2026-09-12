@@ -31,6 +31,3 @@ werewolf_ash-*.tar
 
 # Claude Code agent worktrees
 /.claude/worktrees/
-
-# Ephemeral bead specs: written locally, sent to the routine, never committed
-/.specs/

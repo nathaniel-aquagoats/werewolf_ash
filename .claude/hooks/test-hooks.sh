@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Unit tests for the pipeline hooks. Run: bash .claude/hooks/test-hooks.sh
 #
-# These stub bd, git, gh and curl on PATH, so nothing here touches the network,
-# the beads database or the repository. The approve tests point ROUTINE_API_BASE
-# at a stub curl and never send a real request.
+# Nothing here touches the network, the beads database or this repository:
+# fire-routine.sh runs dry, and next-bead.py reads a throwaway git repository
+# and a JSON file standing in for GitHub.
 
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -45,7 +45,11 @@ ok 2 "$(runpy $P "$(j_file Write coder AGENTS.md)")" "subagent Write to AGENTS.m
 ok 2 "$(runpy $P "$(j_file Write coder .credo.exs)")" "subagent Write to .credo.exs is refused"
 ok 2 "$(runpy $P "$(j_file Edit coder .beads/issues.jsonl)")" "subagent Edit under .beads is refused"
 ok 0 "$(runpy $P "$(j_file Edit coder lib/werewolf_ash/games.ex)")" "subagent Edit to app code is allowed"
-ok 0 "$(runpy $P "$(j_file Write coder .specs/current.md)")" "subagent Write to .specs is allowed"
+ok 2 "$(runpy $P "$(j_file Write coder docs/specs/werewolf_ash-qss.5.md)")" "coder Write to a spec is refused"
+ok 2 "$(runpy $P "$(j_file Edit code-reviewer /home/user/werewolf_ash/docs/specs/werewolf_ash-qss.5.md)")" "code-reviewer Edit to a spec is refused"
+ok 0 "$(runpy $P "$(j_file Write spec-author docs/specs/werewolf_ash-qss.5.md)")" "spec-author may write a spec"
+ok 2 "$(runpy $P "$(j_file Write spec-author .claude/agents/spec-author.md)")" "spec-author may not edit its own brief"
+ok 0 "$(runpy $P "$(j_file_main Edit docs/specs/werewolf_ash-qss.5.md)")" "main session may stamp a spec"
 ok 0 "$(runpy $P "$(j_file_main Write .claude/hooks/gates.sh)")" "main session may edit the pipeline"
 
 # Bash: only write intent counts; reads must pass or the coder cannot orient.
@@ -58,6 +62,8 @@ ok 0 "$(runpy $P "$(j_bash coder 'grep -n Rules CLAUDE.md')")" "subagent may gre
 ok 0 "$(runpy $P "$(j_bash coder 'sed -n 1,40p .claude/skills/bead-pipeline/SKILL.md')")" "subagent may print a skill"
 ok 0 "$(runpy $P "$(j_bash coder 'mix test')")" "subagent may run tests"
 ok 0 "$(runpy $P "$(j_bash coder 'git push -u origin bead/x')")" "subagent may push"
+ok 2 "$(runpy $P "$(j_bash coder "sed -i '' s/a/b/ docs/specs/werewolf_ash-qss.5.md")")" "coder in-place sed on a spec is refused"
+ok 0 "$(runpy $P "$(j_bash coder 'cat docs/specs/werewolf_ash-qss.5.md')")" "coder may read its spec"
 
 # Redirects that only duplicate a file descriptor or hit /dev/null are reads.
 ok 0 "$(runpy $P "$(j_bash coder 'bash .claude/hooks/session-start.sh 2>&1 | tail -20')")" "2>&1 on a pipeline read is not a write"
@@ -85,48 +91,102 @@ ok "1
 out="$(printf '%s' '{"cmd":"line one\nline two"}' | python3 "$HERE/_payload.py" cmd)"
 ok "line one line two" "$out" "newlines inside a value are collapsed"
 
-echo "== approve-bead.sh =="
-A=approve-bead.sh
-mk() { printf '{"hook_event_name":"UserPromptSubmit","prompt":"%s"}' "$1"; }
+echo "== fire-routine.sh =="
+F="$HERE/fire-routine.sh"
+fire() { env -u ROUTINE_ID -u ROUTINE_TOKEN "$@" >/tmp/hk.out 2>/tmp/hk.err; echo $?; }
+DRY="ROUTINE_ID=x ROUTINE_TOKEN=y FIRE_ROUTINE_DRY_RUN=1"
 
-# Unrelated prompts pass straight through.
-ok 0 "$(run $A "$(mk 'what is the state of the games domain')")" "an ordinary prompt is untouched"
-ok 0 "$(run $A "$(mk 'approve the plan please')")" "prose containing approve is not a gesture"
+ok 1 "$(fire bash "$F" werewolf_ash-qss.3)" "fire without ROUTINE_ID refuses"
+ok 0 "$(grep -q ROUTINE_ID /tmp/hk.err; echo $?)" "the refusal names the missing variable"
+ok 1 "$(fire $DRY bash "$F" 'not a bead')" "a malformed bead id refuses"
+ok 1 "$(fire $DRY bash "$F" werewolf_ash-qss.3 werewolf_ash-qss.4)" "two bead ids refuse"
+ok 0 "$(fire $DRY bash "$F" werewolf_ash-qss.3)" "a bead id builds a request"
+ok '{"text": "bead: werewolf_ash-qss.3"}' "$(cat /tmp/hk.out)" "the request carries one bead line and nothing else"
+ok 0 "$(fire $DRY bash "$F")" "no bead id builds a request"
+ok '{}' "$(cat /tmp/hk.out)" "running the queue sends no fire text"
 
-# reject makes no network call and injects context.
-ok 0 "$(run $A "$(mk 'reject werewolf_ash-qss.3: rule 11 is wrong')")" "reject exits 0"
-grep -q 'additionalContext' /tmp/hk.out || { FAIL=$((FAIL+1)); echo "FAIL: reject emits additionalContext"; }
-grep -q 'rule 11 is wrong' /tmp/hk.out && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL: reject carries the note"; }
-python3 -c 'import json,sys; json.load(open("/tmp/hk.out"))' 2>/dev/null && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL: reject output is valid JSON"; }
+echo "== next-bead.py =="
+NB="$HERE/next-bead.py"
+R="$(mktemp -d)"
+PRS="$(mktemp)"
+n=0
+g() { git -C "$R" -c user.name=t -c user.email=t@example.com -c commit.gpgsign=false -c core.hooksPath=/dev/null "$@"; }
+# Each commit is a minute after the last, so merge order is unambiguous.
+commit() {
+  n=$((n + 1))
+  local d="$((1767225600 + n * 60)) +0000"
+  GIT_AUTHOR_DATE="$d" GIT_COMMITTER_DATE="$d" g commit -q --allow-empty -m "$1"
+}
+spec() {
+  mkdir -p "$R/docs/specs"
+  printf '# %s: a title\n\n%s\n\n## Goal\nx\n' "$1" "$2" >"$R/docs/specs/$1.md"
+  g add "docs/specs/$1.md"
+  commit "spec($1): a title"
+}
+nb() { (cd "$R" && NEXT_BEAD_REF=HEAD NEXT_BEAD_NO_FETCH=1 NEXT_BEAD_OPEN_PRS="$PRS" python3 "$NB" "$@" >/tmp/nb.out 2>&1; echo $?); }
+first() { head -1 /tmp/nb.out; }
+has() { grep -qx "$1" /tmp/nb.out && echo yes || echo no; }
 
-# approve refuses when the environment is not set up.
-ok 2 "$(env -u ROUTINE_ID -u ROUTINE_TOKEN bash -c "printf '%s' '$(mk 'approve werewolf_ash-qss.3')' | bash '$HERE/$A'" 2>/tmp/hk.err; echo $?)" "approve without ROUTINE_ID refuses"
-grep -qi 'ROUTINE_ID' /tmp/hk.err && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL: names the missing variable"; }
+g init -q
+commit "werewolf_ash-aaa.1: a bead finished before specs lived on main (#1)"
+spec werewolf_ash-bbb.1 "Depends on: werewolf_ash-ccc.1"
+spec werewolf_ash-ccc.1 "Depends on: werewolf_ash-aaa.1"
+spec werewolf_ash-ddd.1 "Depends on: none"
+spec werewolf_ash-eee.1 "No dependency line at all"
+spec werewolf_ash-fff.1 "Depends on: none
 
-# approve refuses when the spec is missing.
-TMPREPO="$(mktemp -d)"
-mkdir -p "$TMPREPO/.specs"
-out=$(CLAUDE_PROJECT_DIR="$TMPREPO" ROUTINE_ID=x ROUTINE_TOKEN=y bash -c "printf '%s' '$(mk 'approve werewolf_ash-zzz.9')' | bash '$HERE/$A'" 2>/tmp/hk.err; echo $?)
-ok 2 "$out" "approve with no spec file refuses"
-grep -qi 'No spec' /tmp/hk.err && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL: says the spec is missing"; }
-rm -rf "$TMPREPO"
+Implemented in PR #9."
+printf '# Specs\n' >"$R/docs/specs/README.md"
+g add docs/specs/README.md
+commit "docs: specs readme"
+printf '# werewolf_ash-ggg.1: t\n\nDepends on: none\n' >"$R/docs/specs/werewolf_ash-ggg.1.md"
+echo '[]' >"$PRS"
 
-# The payload builder: valid JSON, leads with the skill line, carries the spec.
-TMPSPEC="$(mktemp)"
-printf '# t\n\n## Rules\n1. a rule with "quotes" and a \\ backslash\n' > "$TMPSPEC"
-PAY="$(SPEC_FILE="$TMPSPEC" BEAD="werewolf_ash-qss.3" python3 -c '
-import json, os
-spec = open(os.environ["SPEC_FILE"]).read()
-bead = os.environ["BEAD"]
-text = (
-    "Use the bead-pipeline skill to take this bead to a merged pull request.\n\n"
-    + "bead: " + bead + "\n\n---SPEC---\n" + spec
-)
-print(json.dumps({"text": text}))')"
-echo "$PAY" | python3 -c 'import json,sys; json.load(sys.stdin)' 2>/dev/null && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL: payload is valid JSON"; }
-echo "$PAY" | python3 -c 'import json,sys; t=json.load(sys.stdin)["text"]; sys.exit(0 if t.startswith("Use the bead-pipeline skill") else 1)' && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL: payload leads with the skill line"; }
-echo "$PAY" | python3 -c 'import json,sys; t=json.load(sys.stdin)["text"]; sys.exit(0 if "bead: werewolf_ash-qss.3" in t and "---SPEC---" in t and "backslash" in t else 1)' && PASS=$((PASS+1)) || { FAIL=$((FAIL+1)); echo "FAIL: payload carries bead id and spec body"; }
-rm -f "$TMPSPEC"
+ok 0 "$(nb)" "a ready spec is picked"
+ok "next werewolf_ash-ccc.1" "$(first)" "earliest-merged ready spec wins; one with an unmerged dependency is skipped"
+ok yes "$(has 'waiting werewolf_ash-bbb.1 on werewolf_ash-ccc.1')" "the skipped spec says what it waits on"
+ok yes "$(has 'queued werewolf_ash-ddd.1')" "later ready specs are listed as queued"
+ok 0 "$(grep -q '^malformed werewolf_ash-eee.1' /tmp/nb.out; echo $?)" "a spec with no Depends on line is reported, not started"
+ok 1 "$(grep -q 'fff\|ggg\|README' /tmp/nb.out; echo $?)" "stamped, uncommitted and non-spec files are not queued"
+
+ok 3 "$(nb --check werewolf_ash-bbb.1)" "a named bead with an unmerged dependency does not start"
+ok "waiting werewolf_ash-bbb.1 on werewolf_ash-ccc.1" "$(first)" "and says what it waits on"
+ok 3 "$(nb --check werewolf_ash-fff.1)" "a named stamped bead does not start"
+ok "implemented werewolf_ash-fff.1" "$(first)" "and says it is implemented"
+ok 3 "$(nb --check werewolf_ash-zzz.1)" "a named bead with no spec on main does not start"
+ok "nospec werewolf_ash-zzz.1" "$(first)" "and says there is no spec"
+ok 3 "$(nb --check werewolf_ash-eee.1)" "a named bead with a malformed spec does not start"
+ok 0 "$(nb --check werewolf_ash-ddd.1)" "a named ready bead starts out of queue order"
+ok "next werewolf_ash-ddd.1" "$(first)" "and is the one named"
+ok 1 "$(nb --check 'not a bead')" "a malformed argument is an error"
+
+commit "werewolf_ash-ccc.1: the dependency lands (#10)"
+ok 0 "$(nb)" "a merged dependency releases the waiting spec"
+ok "next werewolf_ash-bbb.1" "$(first)" "which goes ahead of later specs, in merge order"
+
+printf '[{"number":4,"title":"werewolf_ash-ddd.1: x","headRefName":"bead/werewolf_ash-ddd.1","labels":[{"name":"needs-human"}]}]' >"$PRS"
+ok 3 "$(nb)" "a needs-human PR pauses the queue"
+ok "paused #4 werewolf_ash-ddd.1: x" "$(first)" "the pause names the PR"
+ok 0 "$(nb --check werewolf_ash-ddd.1)" "naming the stuck bead resumes its own PR"
+ok "continue #4" "$(first)" "resume names the PR"
+
+printf '[{"number":5,"title":"werewolf_ash-ddd.1: x","headRefName":"bead/werewolf_ash-ddd.1","labels":[]}]' >"$PRS"
+ok 3 "$(nb)" "an open bead PR means the queue is busy"
+ok "busy #5 bead/werewolf_ash-ddd.1" "$(first)" "busy names the branch"
+ok 3 "$(nb --check werewolf_ash-bbb.1)" "a different named bead cannot start while one is in flight"
+
+printf '[{"number":6,"title":"spec(werewolf_ash-hhh.1): x","headRefName":"spec/werewolf_ash-hhh.1","labels":[]}]' >"$PRS"
+ok 0 "$(nb)" "an open spec PR does not block the queue"
+
+echo '[]' >"$PRS"
+commit "werewolf_ash-bbb.1: done (#11)"
+commit "werewolf_ash-ddd.1: done (#12)"
+ok 3 "$(nb)" "nothing ready is idle"
+ok "idle" "$(first)" "idle says so"
+
+echo 'not json' >"$PRS"
+ok 1 "$(nb)" "unreadable pull requests are an error, never a start"
+rm -rf "$R" "$PRS"
 
 echo
 echo "$PASS passed, $FAIL failed"

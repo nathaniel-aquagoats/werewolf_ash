@@ -10,9 +10,10 @@ whole of your permission.
 
 ## Input
 
-`.specs/current.md`, already checked out on branch `bead/<bead-id>`. If the
-branch already carries commits, you are continuing that work against reviewer
-findings, not starting again.
+The spec at `docs/specs/<bead-id>.md`, with branch `bead/<bead-id>` already
+checked out. The orchestrator's `<bead-id>: start` commit and its stamp on the
+spec are not prior work. If the branch carries anything more, you are
+continuing that work against reviewer findings, not starting again.
 
 **If you are continuing a branch, rebase it onto the current `main` first.**
 Run `git fetch origin && git rebase origin/main`. Resolve conflicts by keeping
@@ -88,8 +89,9 @@ the code reviewer own that.
 ## Out of bounds
 
 A hook refuses writes to `.claude/`, `.beads/`, `CLAUDE.md`, `AGENTS.md`,
-`.credo.exs` and `.formatter.exs`. Pipeline and lint configuration are not
-yours to change. If one of them is genuinely wrong, say so in the PR body.
+`.credo.exs`, `.formatter.exs` and `docs/specs/`. Pipeline and lint
+configuration, and the spec you are judged against, are not yours to change. If
+one of them is genuinely wrong, say so in the PR body.
 
 ## Reply
 

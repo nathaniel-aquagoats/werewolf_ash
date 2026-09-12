@@ -110,82 +110,125 @@ Real-time (wall-clock day/night) werewolf game. Ash 3 domain is the source of tr
 - Actions are used once: a player may take each action type once per phase, and a second attempt is refused rather than replacing the first. That includes the day vote, so a villager's vote is final once cast
 - Chat: two channels per game, `village` (all living players) and `wolves` (living werewolves), open in every phase; dead players can read every channel but post in none; living non-wolves never see the wolves channel
 - Alias style (enforced by `mix lint` via Credo): never group aliases (`alias Foo.{Bar, Baz}` -> one `alias` per line); never call a nested module fully qualified — `Foo.Bar.baz()` must be `alias Foo.Bar` + `Bar.baz()`. Elixir stdlib modules (`Enum`, `DateTime`, `Ecto`-style single names) are exempt per Credo's defaults
-- Do not commit or push unless asked
+- Do not commit or push unless asked. Spec pull requests are the standing exception (see Bead lifecycle)
 
 ## Bead lifecycle
 
-Beads are specified locally, implemented in a claude.ai cloud routine, and
-merged by the reviewer that checked them. The old worktree-and-coordinator
+Beads are specified locally, approved by merging a spec pull request, built one
+at a time by a claude.ai cloud routine that works through the approved specs,
+and merged by the reviewer that checked them. The old worktree-and-coordinator
 workflow is retired; `.claude/worktrees/` is no longer used.
 
 ```
-spec-author  ->  spec-reviewer  ->  you  ->  approve  ->  cloud routine
-                                                              |
-                                          coder -> code-reviewer -> merge
-                                                              |
-                                     SessionStart sync closes the bead
+grill the owner -> spec-author -> spec-reviewer -> spec PR -> owner merges it
+                                                                    |
+      queue (any merge into main, daily, or by hand) -> coder -> code-reviewer -> merge
+                                                                    |
+                                               SessionStart sync closes the bead
 ```
 
 ### Locally
 
-- `spec-author` (sonnet) turns a bead into `.specs/<bead-id>.md`: Goal, numbered
-  testable Rules, Out of scope, Acceptance naming public functions, advisory
-  Touches.
+- **Grill the owner first.** Before filing a bead or starting a spec, ask
+  thorough questions about the task and the design, each with a recommended
+  answer, until the design is settled. The owner asked for this: a question
+  answered up front is a spec revision round that never happens.
+- `spec-author` (sonnet) writes `docs/specs/<bead-id>.md`: a `Depends on:`
+  line, a **For the owner** card (what changes, decisions with
+  recommendations, rule changes), then Goal, numbered testable Rules, Out of
+  scope, Acceptance naming public functions, advisory Touches.
 - `spec-reviewer` (opus) checks it against the bead, the code and the settled
-  decisions here. It never approves on your behalf. **Size the review to the
-  bead:** beads that change domain rules, add or change authorization, add a
-  migration, or rely on how Ash or AshGraphql behaves get the review. Beads
-  that only change docs, config or wording skip it. If usage limits start to
-  bite, move the middle tier to a Sonnet reviewer before dropping review.
+  decisions here, including that the header and the owner card are true. It
+  never approves. **Size the review to the bead:** beads that change domain
+  rules, add or change authorization, add a migration, or rely on how Ash or
+  AshGraphql behaves get the review. Beads that only change docs, config or
+  wording skip it. If usage limits start to bite, move the middle tier to a
+  Sonnet reviewer before dropping review.
 - **The coordinator runs the loop quietly.** Authoring, one review pass and at
   most one revision happen without relaying each agent message to the owner.
   Only blockers go back to the author; the coordinator fixes nits directly in
   the spec; a second review happens only when there were blockers, and only on
-  those. The owner sees the finished spec and the decisions that are genuinely
-  theirs, not the agent traffic.
-- You read and edit the finished spec. This is the point where the design is
-  decided.
-- **`approve <bead-id>`** fires the routine with the whole spec. **`reject
-  <bead-id>: <note>`** sends it back to the author and makes no network call.
-  A `UserPromptSubmit` hook implements both; approval refuses if the bead is
-  closed, unknown, has unfinished dependencies, or has no spec. The message must
-  be exactly the command with the full bead id.
+  those.
+- **The coordinator opens the spec PR.** Branch `spec/<bead-id>` from `main`,
+  committing only the spec; title `spec(<bead-id>): <bead title>`; body a link
+  to the file. The owner has given standing permission to push spec branches
+  and open or update spec PRs without asking. That covers spec PRs only: never
+  merge one, never push to `main`, and code or config changes still need the
+  owner's go-ahead. Then send the owner a push notification with the link.
+- **A spec PR title must not start `<bead-id>:`.** The sync closes a bead from
+  that title shape, and the queue treats a commit subject of that shape on
+  `main` as the bead being implemented.
+- **The owner approves by merging**, which accepts the card's
+  recommendations. A comment is a change request: the SessionStart report
+  lists spec PRs with comments newer than their last push, and the coordinator
+  acts on them, grilling the owner if a comment opens a design question,
+  having the author revise, and pushing to the same PR.
+- A merged spec changes only through another spec PR.
+
+### The queue
+
+The routine runs when a pull request merges into `main`, once a day, and by
+hand through its API (`.claude/hooks/fire-routine.sh [<bead-id>]`). What a run
+does is decided by `.claude/hooks/next-bead.py`, from `main` and the open pull
+requests:
+
+- **Paused** while any PR labelled `needs-human` is open, until the owner looks.
+- **Busy** while any `bead/*` PR is open: one bead at a time.
+- Otherwise it starts the **earliest-merged spec** that is not implemented and
+  whose `Depends on:` beads are all implemented. Implemented means `main` has
+  a commit subject starting `<bead-id>:`, which every bead squash has and so do
+  beads finished before this flow, or the spec is stamped `Implemented in PR #N.`
+- **A named bead** skips queue order and nothing else, and resumes that bead's
+  own open PR if it has one. When the owner says to implement a specific bead,
+  or to retry a `needs-human` PR after looking at it, the coordinator runs
+  `fire-routine.sh <bead-id>`. Closing a `needs-human` PR instead unpauses the
+  queue; the bead then restarts from its leftover branch.
+- Every merge costs a routine run against the daily cap, even when the queue is
+  busy and the run stops at once, so merging a burst of spec PRs spends a run
+  each.
 
 ### In the cloud
 
 The routine's prompt is only a pointer; the orchestration is
 `.claude/skills/bead-pipeline/SKILL.md`, so it is versioned with the repo.
 
-- `coder` (sonnet) implements the spec and only the spec, then pushes to
-  `bead/<bead-id>`.
+- The orchestrator claims a bead by opening its PR, `<bead-id>: <title>` from
+  `bead/<bead-id>`, before any work, then stamps the spec on that branch with
+  the PR number.
+- `coder` (sonnet) implements the spec and only the spec, then pushes.
 - `code-reviewer` (opus) breaks each rule in a scratch copy to prove a test
   catches it, hard-rejects anything outside the spec's scope, then rebases,
   re-runs the gates and squash-merges.
 - Both agents are run synchronously by preference, so a run is one legible
   sequence. Backgrounding does work — the session wakes when a subagent
   finishes — but the run must never end with the PR open and unreviewed.
-- One retry on rejection. Then the PR is labelled `needs-human` and left open.
+- One retry on rejection. Then the PR is labelled `needs-human`, left open, and
+  the queue pauses.
 - Never a direct push to `main`.
 
 **GitHub in the cloud is split.** Reads (`gh pr list`, `git fetch`) and
 `git push` work, but the `gh` CLI's ambient token is rejected for writes and
-`gh api` write paths are proxy-refused. PRs are created and merged with the
-`mcp__github__*` tools instead. Deleting a remote branch is impossible from the
-cloud (403); merged branches are pruned by the local sync.
+`gh api` write paths are proxy-refused. PRs are created, updated, closed and
+merged with the `mcp__github__*` tools instead. Deleting a remote branch is
+impossible from the cloud (403); merged branches are pruned by the local sync.
 
 ### Back again
 
 GitHub is the only channel home; the beads database never leaves this machine.
-A `SessionStart` hook closes beads whose PR merged by parsing the bead id from
-the PR title, deletes the spent spec file, prunes merged remote branches, and
-lists anything labelled `needs-human`. **The squash title must be
-`<bead-id>: <title>`** or the bead is stranded open.
+`sync-beads.sh`, run by the `SessionStart` hook, closes beads whose PR merged by
+parsing the bead id from the PR title, prunes merged `bead/` and `spec/`
+branches, and reports PRs labelled `needs-human`, spec PRs waiting on the owner
+(with any new comments), and the queue's next decision. **The squash title must
+be `<bead-id>: <title>`** or the bead is stranded open and everything that
+depends on it waits.
 
-### Specs are ephemeral
+### Specs live on main
 
-`.specs/` is gitignored and never committed. The copy that survives is the one
-in the PR body, which is the audit trail. The local file is deleted when its PR
-merges.
+`docs/specs/` is the record of what each bead was asked to do, and specs are
+never deleted. A bead PR stamps its spec `Implemented in PR #N.` and the stamp
+lands with the merge. Subagents other than `spec-author` are refused writes to
+`docs/specs/`, so a coder cannot move the goalposts it is reviewed against; the
+stamp is written by the cloud orchestrator, which is the main session.
 
 ### Division of labour
 
@@ -194,19 +237,28 @@ goes through the pipeline. Anything about how the agents operate — briefs,
 hooks, skills, this file, the beads graph — is done directly in the main tree,
 because a bead worker is forbidden from touching it.
 
-### Hooks
+### Hooks and scripts
 
-| Hook | Event | Does |
+All under `.claude/hooks/`. Tests: `bash .claude/hooks/test-hooks.sh`.
+
+| File | Runs | Does |
 |---|---|---|
-| `gates.sh` | `git push`, and `coder` finishing | `mix compile --warnings-as-errors`, `mix ash.codegen --check`, `mix lint`, `mix test`; exit 2 with the failing tail |
-| `protect-pipeline.py` | Edit/Write/Bash | Refuses subagent writes to `.claude/`, `.beads/`, `CLAUDE.md`, `AGENTS.md`, `.credo.exs`, `.formatter.exs`. The main session is unaffected |
-| `session-start.sh` | SessionStart | Starts Postgres, syncs merged beads, runs `bd prime` |
+| `gates.sh` | hook: `git push`, and `coder` finishing | `mix compile --warnings-as-errors`, `mix ash.codegen --check`, `mix lint`, `mix test`; exit 2 with the failing tail |
+| `protect-pipeline.py` | hook: Edit/Write/Bash | Refuses subagent writes to `.claude/`, `.beads/`, `CLAUDE.md`, `AGENTS.md`, `.credo.exs`, `.formatter.exs`, and to `docs/specs/` unless the subagent is `spec-author`. The main session is unaffected |
+| `session-start.sh` | hook: SessionStart | Starts Postgres, runs `sync-beads.sh`, runs `bd prime` |
+| `next-bead.py` | cloud orchestrator; sync report | Prints the queue's decision: `next`, `continue`, `paused`, `busy`, `idle`, or why a named bead can't start |
+| `fire-routine.sh` | coordinator, by hand | Starts the routine, optionally naming a bead |
 
 ### Secrets and configuration
 
 `ROUTINE_ID` and `ROUTINE_TOKEN` live in fish universal variables
-(`set -Ux ROUTINE_ID trig_...`), never in the repo and never in chat. The
-approve hook reads them from the environment and refuses if they are unset.
+(`set -Ux ROUTINE_ID trig_...`), never in the repo and never in chat.
+`fire-routine.sh` reads them from the environment and refuses if they are unset.
+
+The routine ("Spec implementation Routine") has three triggers: a GitHub
+trigger on pull requests merged into `main` (it needs the Claude GitHub App on
+the repository), a daily schedule, and its API. Its saved prompt points at the
+skill and allows acting on exactly one line of fire text, `bead: <bead-id>`.
 
 The cloud environment's setup script is mirrored at `.claude/cloud-setup.sh`
 for review; the live copy is pasted into the environment at claude.ai. Edit

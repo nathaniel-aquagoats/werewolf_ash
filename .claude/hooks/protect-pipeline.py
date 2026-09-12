@@ -5,10 +5,15 @@ A worker under context pressure can "fix" a failing gate by loosening the gate,
 rewriting a reviewer brief, or deleting a Credo rule. Nothing in a bead needs
 those files, so writes to them are refused with a pointer to the PR body.
 
+Specs under docs/specs/ are protected the same way: a coder that edits its spec
+has moved the goalposts it is reviewed against. The spec author is the one
+subagent that writes them.
+
 Only calls made from inside a subagent are blocked: a payload carries
 agent_type when a subagent made the call and omits it in the main session, so
-the coordinator can still edit the pipeline directly. PIPELINE_EDIT=1 lifts the
-block for a session that is deliberately changing the pipeline.
+the coordinator can still edit the pipeline directly, and the cloud orchestrator
+can still stamp a spec with its PR number. PIPELINE_EDIT=1 lifts the block for a
+session that is deliberately changing the pipeline.
 
 Wired as PreToolUse on Edit|Write|NotebookEdit|Bash. Exit 2 refuses the call.
 """
@@ -27,6 +32,9 @@ PROTECTED = (
     ".formatter.exs",
 )
 
+SPECS = "docs/specs/"
+SPEC_WRITERS = {"spec-author"}
+
 # Redirects that write nothing the worker owns: file-descriptor duplication
 # (2>&1, >&2) and the bit bucket (>/dev/null, 2>/dev/null). Stripped before the
 # write-intent check, or a plain read like "cat SKILL.md 2>&1 | tail" is refused
@@ -40,18 +48,18 @@ WRITE_INTENT = re.compile(
 )
 
 REFUSAL = (
-    "Blocked: {target} is part of the agent pipeline or lint config, which is "
-    "out of scope for every bead. Do not edit hooks, agent briefs, skills, "
-    "CLAUDE.md, AGENTS.md, Credo or formatter config, or the beads database. "
-    "If one of them is genuinely wrong, say so in the pull request body and "
-    "leave the file alone."
+    "Blocked: {target} is part of the agent pipeline, a spec, or lint config, "
+    "which is out of scope for every bead. Do not edit hooks, agent briefs, "
+    "skills, specs under docs/specs, CLAUDE.md, AGENTS.md, Credo or formatter "
+    "config, or the beads database. If one of them is genuinely wrong, say so "
+    "in the pull request body and leave the file alone."
 )
 
 
-def protected_hit(text):
+def protected_hit(text, patterns):
     if not text:
         return None
-    for pattern in PROTECTED:
+    for pattern in patterns:
         if pattern.endswith("/"):
             found = pattern in text or text.startswith(pattern.rstrip("/"))
         else:
@@ -72,9 +80,11 @@ def main():
         return 0
 
     # Absent agent_type means the main session, which may edit the pipeline.
-    if not payload.get("agent_type"):
+    agent = payload.get("agent_type")
+    if not agent:
         return 0
 
+    patterns = PROTECTED if agent in SPEC_WRITERS else PROTECTED + (SPECS,)
     tool = payload.get("tool_name", "")
     tool_input = payload.get("tool_input") or {}
 
@@ -82,9 +92,9 @@ def main():
         command = HARMLESS_REDIRECT.sub(" ", tool_input.get("command", ""))
         if not WRITE_INTENT.search(command):
             return 0
-        target = protected_hit(command)
+        target = protected_hit(command, patterns)
     else:
-        target = protected_hit(tool_input.get("file_path", ""))
+        target = protected_hit(tool_input.get("file_path", ""), patterns)
 
     if target:
         print(REFUSAL.format(target=target), file=sys.stderr)
