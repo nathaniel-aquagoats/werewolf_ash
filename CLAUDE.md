@@ -118,7 +118,7 @@ merged by the reviewer that checked them. The old worktree-and-coordinator
 workflow is retired; `.claude/worktrees/` is no longer used.
 
 ```
-spec-author  ->  you  ->  spec-reviewer  ->  approve  ->  cloud routine
+spec-author  ->  spec-reviewer  ->  you  ->  approve  ->  cloud routine
                                                               |
                                           coder -> code-reviewer -> merge
                                                               |
@@ -130,13 +130,25 @@ spec-author  ->  you  ->  spec-reviewer  ->  approve  ->  cloud routine
 - `spec-author` (sonnet) turns a bead into `.specs/<bead-id>.md`: Goal, numbered
   testable Rules, Out of scope, Acceptance naming public functions, advisory
   Touches.
-- You read and edit it. This is the point where the design is decided.
-- `spec-reviewer` (opus) checks it against the bead and the settled decisions
-  here. It never approves on your behalf.
+- `spec-reviewer` (opus) checks it against the bead, the code and the settled
+  decisions here. It never approves on your behalf. **Size the review to the
+  bead:** beads that change domain rules, add or change authorization, add a
+  migration, or rely on how Ash or AshGraphql behaves get the review. Beads
+  that only change docs, config or wording skip it. If usage limits start to
+  bite, move the middle tier to a Sonnet reviewer before dropping review.
+- **The coordinator runs the loop quietly.** Authoring, one review pass and at
+  most one revision happen without relaying each agent message to the owner.
+  Only blockers go back to the author; the coordinator fixes nits directly in
+  the spec; a second review happens only when there were blockers, and only on
+  those. The owner sees the finished spec and the decisions that are genuinely
+  theirs, not the agent traffic.
+- You read and edit the finished spec. This is the point where the design is
+  decided.
 - **`approve <bead-id>`** fires the routine with the whole spec. **`reject
   <bead-id>: <note>`** sends it back to the author and makes no network call.
   A `UserPromptSubmit` hook implements both; approval refuses if the bead is
-  closed, unknown, has unfinished dependencies, or has no spec.
+  closed, unknown, has unfinished dependencies, or has no spec. The message must
+  be exactly the command with the full bead id.
 
 ### In the cloud
 

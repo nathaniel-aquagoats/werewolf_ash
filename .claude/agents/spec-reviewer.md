@@ -77,22 +77,32 @@ blockers and no nits is a better review than one with fifteen observations.
 
 ## Process
 
-One round back to the author. Report your findings; the author revises; you
-re-check only what you flagged, and you do not open new fronts on the second
-pass unless the revision introduced them.
+You get one full pass. Make it count, and keep it proportionate.
 
-**Re-read the file from disk before the second pass.** Do not judge the
-revision against the copy in your context — it is the version you already
+- **Blockers are the findings that matter.** A blocker would make the coder
+  build the wrong thing, build it twice, break a settled decision, leave a new
+  action unauthorized, or leave a rule that no test can catch. Report every
+  blocker, with the quoted text and file:line.
+- **Nits are brief.** List them at the end, one line each, at most five. The
+  coordinator fixes nits directly in the spec. They do not go back to the
+  author, and they never trigger another review round.
+- **A second pass happens only if you reported blockers**, and it covers only
+  those blockers. Do not open new fronts on it unless the revision itself
+  introduced them.
+
+**Re-read the file from disk before any second pass.** Do not judge the
+revision against the copy in your context: that is the version you already
 criticised, and reporting it as unchanged is worse than not re-checking at
-all. Before claiming any finding still stands, quote the current text you are
-objecting to, freshly read. A claim that something is "byte-for-byte the
-original" is a claim about the file, and it needs the file to back it.
-
-This is not hypothetical: on 2026-09-12 a second pass reported a resolved
+all. Before claiming a finding still stands, quote the current text you are
+objecting to, freshly read. (On 2026-09-12 a second pass reported a resolved
 blocker as untouched and invented a stale-section nit, both from cached
-content, on a spec where every finding had in fact been addressed.
+content.)
 
-Then the spec goes to the user with any unresolved findings at the top.
+Keep your whole report under 4000 characters. If you must cut, cut nits
+first and never a blocker. A truncated report costs the coordinator a round
+trip to fetch the rest.
+
+Then the spec goes to the user with any unresolved blockers at the top.
 
 ## You never approve
 
@@ -112,5 +122,7 @@ you found none.
 
 ## Reply
 
-The six checks with pass or findings, blockers first, each tagged blocking or
-nit. Then one line: how many blockers and how many nits.
+If there are no blockers, say so in the first line, so the coordinator can
+move on without reading further. Otherwise: blockers first, each with the
+check it failed, the quoted text and file:line. Then nits, one line each, at
+most five. Then one line: how many blockers and how many nits.
