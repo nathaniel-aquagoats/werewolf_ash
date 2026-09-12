@@ -4,6 +4,7 @@ defmodule WerewolfAsh.Games.Reactors.CheckWinTest do
   import WerewolfAsh.Generators
 
   alias WerewolfAsh.Games
+  alias WerewolfAsh.Games.Player
   alias WerewolfAsh.Games.Reactors.CheckWin
 
   defp check(game), do: Reactor.run(CheckWin, %{game_id: game.id}, %{}, async?: false)
@@ -98,6 +99,23 @@ defmodule WerewolfAsh.Games.Reactors.CheckWinTest do
       game = Games.get_game!(game.id)
       assert game.state == :lobby
       assert is_nil(game.winner)
+    end
+  end
+
+  describe "count/1 (pure tally)" do
+    test "tallies wolves against everyone else, nil role included" do
+      players = [
+        %Player{role: :werewolf},
+        %Player{role: :werewolf},
+        %Player{role: :villager},
+        %Player{role: nil}
+      ]
+
+      assert CheckWin.count(players) == %{wolves: 2, non_wolves: 2}
+    end
+
+    test "no players is all zero" do
+      assert CheckWin.count([]) == %{wolves: 0, non_wolves: 0}
     end
   end
 
