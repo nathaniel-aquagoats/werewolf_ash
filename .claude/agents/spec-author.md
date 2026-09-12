@@ -94,6 +94,31 @@ most common way a spec sends the coder into a red suite with no warning, and it
 invites the coder to "fix" the wrong thing — a settled rule elsewhere — rather
 than update the stale expectation.
 
+This is the part of a spec most often wrong. On 2026-09-12 three of four
+authors got it wrong, each confident: one wrote "None" over a whole test block
+it had missed, one said calls "stay as-is" that its own rules forbade, and one
+omitted an entire test file. The reviewer caught every one by grepping, which
+cost a full revision round each time. So these are requirements, not style:
+
+- **Show the grep, not a summary of it.** Give the exact command you ran and
+  list every hit as `path:line`. A breakage list with no line numbers is not
+  a breakage list.
+- **Never write "None", "stays as-is" or "nothing else in this file changes"
+  without the grep that proves it.** If you claim a call site is unaffected,
+  name the rule that leaves it unaffected.
+- **Grep helpers and direct calls separately.** A test that calls
+  `list_messages_visible_to!` directly is not covered by noting that a local
+  `visible_ids` helper calls it.
+- **Check what a changed return does to its readers.** If a rule can make a
+  call return an empty list, a nil, or a forbidden-field struct instead of
+  raising, trace what the caller does with that. Do not assert whether it
+  fails loudly or silently without reading the code that receives it.
+- **Say which side is stale.** For every break, state that the test's
+  expectation is stale (never the rule) and what the corrected assertion is.
+- **Framework claims need a source line.** "Ash does X" is a claim about
+  `deps/`; cite the file and line you read. A claim you did not verify is an
+  Assumption, and belongs in that section, labelled as unverified.
+
 ## Constraints
 
 - Never run `git commit`, `git push`, `bd update`, `bd close`, or anything that
