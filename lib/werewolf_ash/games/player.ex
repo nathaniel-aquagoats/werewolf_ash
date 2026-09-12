@@ -21,6 +21,12 @@ defmodule WerewolfAsh.Games.Player do
   actions do
     defaults [:read, :destroy]
 
+    read :living_in_game do
+      description "The players of one game that are still alive."
+      argument :game_id, :uuid, allow_nil?: false
+      filter expr(game_id == ^arg(:game_id) and alive)
+    end
+
     create :create do
       primary? true
       accept [:game_id, :user_id, :role]

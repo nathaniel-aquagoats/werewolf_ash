@@ -12,6 +12,7 @@ defmodule WerewolfAsh.Games do
     resource WerewolfAsh.Games.Game do
       define :create_game, action: :create
       define :update_game, action: :update
+      define :finish_game, action: :finish, args: [:winner]
       define :destroy_game, action: :destroy
       define :get_game, action: :read, get_by: [:id]
       define :get_game_by_join_code, action: :read, get_by: [:join_code]
@@ -30,6 +31,7 @@ defmodule WerewolfAsh.Games do
       define :remove_player, action: :destroy
       define :get_player, action: :read, get_by: [:id]
       define :list_players, action: :read
+      define :list_living_players, action: :living_in_game, args: [:game_id]
     end
 
     resource WerewolfAsh.Games.Phase do

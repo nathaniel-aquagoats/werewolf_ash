@@ -38,6 +38,7 @@ defmodule WerewolfAsh.Games.Game do
       transition :start, from: :lobby, to: [:day, :night]
       transition :end_day, from: :day, to: :night
       transition :end_night, from: :night, to: :day
+      transition :finish, from: [:day, :night, :hunter_pending], to: :finished
     end
   end
 
@@ -102,6 +103,14 @@ defmodule WerewolfAsh.Games.Game do
 
       change {AdvancePhase, to: :day}
     end
+
+    update :finish do
+      description "Closes the game, recording which team won."
+      accept []
+      argument :winner, WerewolfAsh.Games.Game.Winner, allow_nil?: false
+      change set_attribute(:winner, arg(:winner))
+      change transition_state(:finished)
+    end
   end
 
   validations do
@@ -155,6 +164,11 @@ defmodule WerewolfAsh.Games.Game do
       public? true
       default :lobby
       constraints one_of: @states
+    end
+
+    attribute :winner, WerewolfAsh.Games.Game.Winner do
+      description "Set by the `finish` action once the game is over; nil while it is being played."
+      public? true
     end
 
     timestamps()
