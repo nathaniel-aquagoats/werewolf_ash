@@ -54,6 +54,7 @@ defmodule WerewolfAsh.MixProject do
   defp deps do
     [
       {:tz, "~> 0.28"},
+      {:swoosh, "~> 1.0"},
       # ash_authentication 4.14.2 declares this as a hard (non-optional)
       # dependency at the Hex package level (AshAuthentication.BcryptProvider
       # is compiled unconditionally), so it stays even though we no longer

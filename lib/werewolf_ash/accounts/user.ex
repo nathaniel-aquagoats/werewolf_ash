@@ -114,11 +114,10 @@ defmodule WerewolfAsh.Accounts.User do
 
     action :request_magic_link, :boolean do
       description """
-      Requests a magic-link sign-in token for the given email and logs it
-      (dev sender; real delivery is a separate piece of work). Always
-      reports the same success result whether or not the email belongs to
-      a registered user, so the response can never be used to enumerate
-      accounts.
+      Requests a magic-link sign-in token for the given email and emails it
+      as a deep link to the mobile app. Always reports the same success
+      result whether or not the email belongs to a registered user, so the
+      response can never be used to enumerate accounts.
       """
 
       argument :email, :ci_string do

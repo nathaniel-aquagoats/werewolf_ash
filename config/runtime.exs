@@ -32,4 +32,14 @@ if config_env() == :prod do
     token_signing_secret:
       System.get_env("TOKEN_SIGNING_SECRET") ||
         raise("Missing environment variable `TOKEN_SIGNING_SECRET`!")
+
+  resend_api_key =
+    System.get_env("RESEND_API_KEY") ||
+      raise("Missing environment variable `RESEND_API_KEY`!")
+
+  config :werewolf_ash, WerewolfAsh.Mailer,
+    adapter: Swoosh.Adapters.Resend,
+    api_key: resend_api_key
+
+  config :swoosh, :api_client, Swoosh.ApiClient.Req
 end

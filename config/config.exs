@@ -26,6 +26,21 @@ config :werewolf_ash,
 # correctness/future-proofing and to silence the strategy's compile warning.
 config :ash_authentication, return_error_on_invalid_magic_link_token?: true
 
+# Compile-time flag gating the `magic_link_test_pid` forwarding in
+# `SendMagicLinkEmail.send/3` — deliberately not a runtime `Mix.env/0` check,
+# which raises `UndefinedFunctionError` under a `mix release` (see the
+# sender's moduledoc).
+config :werewolf_ash, :magic_link_test_hook?, config_env() == :test
+
+# The deep link the magic-link email points at (`?token=<token>` is appended
+# at send time) and the "from" address emails are sent as. Looked up via
+# `Application.fetch_env!/2` at call time, not `compile_env/2`, so either can
+# be overridden — including by a test's `Application.put_env/3` — without a
+# recompile. `o25.3` reconciles this base URL with the real mobile scheme
+# once one is registered.
+config :werewolf_ash, :magic_link_deep_link_base_url, "werewolfash://magic-link"
+config :werewolf_ash, :magic_link_from_address, "no-reply@werewolf-ash.example"
+
 config :werewolf_ash, WerewolfAshWeb.Endpoint,
   url: [host: "localhost"],
   adapter: Bandit.PhoenixAdapter,
