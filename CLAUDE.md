@@ -122,7 +122,7 @@ workflow is retired; `.claude/worktrees/` is no longer used.
 ```
 grill the owner -> spec-author -> spec-reviewer -> spec PR -> owner merges it
                                                                     |
-      queue (any merge into main, daily, or by hand) -> coder -> code-reviewer -> merge
+      queue (any PR closing, daily, or by hand) -> coder -> code-reviewer -> merge
                                                                     |
                                                SessionStart sync closes the bead
 ```
@@ -167,8 +167,8 @@ grill the owner -> spec-author -> spec-reviewer -> spec PR -> owner merges it
 
 ### The queue
 
-The routine runs when a pull request merges into `main`, once a day, and by
-hand through its API (`.claude/hooks/fire-routine.sh [<bead-id>]`). What a run
+The routine runs whenever a pull request closes (merged or not), once a day,
+and by hand through its API (`.claude/hooks/fire-routine.sh [<bead-id>]`). What a run
 does is decided by `.claude/hooks/next-bead.py`, from `main` and the open pull
 requests:
 
@@ -182,10 +182,11 @@ requests:
   own open PR if it has one. When the owner says to implement a specific bead,
   or to retry a `needs-human` PR after looking at it, the coordinator runs
   `fire-routine.sh <bead-id>`. Closing a `needs-human` PR instead unpauses the
-  queue; the bead then restarts from its leftover branch.
-- Every merge costs a routine run against the daily cap, even when the queue is
-  busy and the run stops at once, so merging a burst of spec PRs spends a run
-  each.
+  queue, and the close itself starts a run; the bead restarts from its
+  leftover branch.
+- Every PR that closes costs a routine run against the daily cap, even when
+  the queue is busy and the run stops at once, so merging a burst of spec PRs
+  spends a run each.
 
 ### In the cloud
 
@@ -256,8 +257,13 @@ All under `.claude/hooks/`. Tests: `bash .claude/hooks/test-hooks.sh`.
 `fire-routine.sh` reads them from the environment and refuses if they are unset.
 
 The routine ("Spec implementation Routine") has three triggers: a GitHub
-trigger on pull requests merged into `main` (it needs the Claude GitHub App on
-the repository), a daily schedule, and its API. Its saved prompt points at the
+trigger on `pull_request.closed`, a daily schedule at 15:00 UTC, and its API.
+The GitHub trigger needs the Claude GitHub App installed on the repository. It
+is attached with `RemoteTrigger` `create_webhook_trigger` and the body
+`{"routine_trigger_id": "trig_...", "source": "github", "hook_type": "app",
+"scope_id": "<owner>/<repo>", "events": ["pull_request.closed"]}`; the filter
+format is undocumented and every shape tried was refused, so the trigger is
+unfiltered and `next-bead.py` sorts out what each run should do. Its saved prompt points at the
 skill and allows acting on exactly one line of fire text, `bead: <bead-id>`.
 
 The cloud environment's setup script is mirrored at `.claude/cloud-setup.sh`
