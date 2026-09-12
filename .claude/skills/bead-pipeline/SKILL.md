@@ -116,20 +116,21 @@ carrying it at every start, so labelling is how you raise a hand. If labelling
 fails outright, say so loudly in a PR comment instead — an unlabelled stuck PR
 is invisible to the maintainer.
 
-## Never dispatch and walk away
+## Prefer running the agents synchronously
 
-Run the coder and the reviewer **synchronously**. Do not launch either as a
-background or async agent, and never end your turn while one is still working.
+Call the coder and the reviewer and block on the answer, rather than launching
+them in the background and ending your turn.
 
-This is not a style preference. The cloud session ends when your turn ends, and
-it does not reliably wake for a background subagent's result — a run that
-dispatched the reviewer and stopped left a real bead as an open, unreviewed PR
-(observed 2026-09-12, PR #3). If you find yourself writing "I'll wait for its
-result", you have already made the mistake: waiting is not a thing you can do.
-Call the agent, block on its answer, then act on it in the same turn.
+Backgrounding does work — on 2026-09-12 a run dispatched the reviewer, went
+idle, and woke about six minutes later to merge PR #3 correctly. So this is a
+preference, not a correctness rule. Synchronous is better because the run is
+one legible sequence, a failure surfaces where it happened, and nothing depends
+on wake-up timing you cannot see or control.
 
-If a step is genuinely too slow to finish in one turn, do not paper over it by
-backgrounding. Label the PR `needs-human` and say what timed out.
+Either way the rule that does matter is: **do not finish the run until the
+reviewer has reported.** A run that ends with the PR open and unreviewed has
+failed, however it got there. If something is genuinely too slow to complete,
+label the PR `needs-human` and say what timed out.
 
 ## Rules for you, the orchestrator
 

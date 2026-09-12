@@ -145,9 +145,9 @@ The routine's prompt is only a pointer; the orchestration is
 - `code-reviewer` (opus) breaks each rule in a scratch copy to prove a test
   catches it, hard-rejects anything outside the spec's scope, then rebases,
   re-runs the gates and squash-merges.
-- Both agents run **synchronously**. The cloud session ends when the
-  orchestrator's turn ends and does not wake for a backgrounded subagent, so a
-  dispatched-and-forgotten reviewer strands the bead as an open, unreviewed PR.
+- Both agents are run synchronously by preference, so a run is one legible
+  sequence. Backgrounding does work — the session wakes when a subagent
+  finishes — but the run must never end with the PR open and unreviewed.
 - One retry on rejection. Then the PR is labelled `needs-human` and left open.
 - Never a direct push to `main`.
 
