@@ -59,6 +59,15 @@ ok 0 "$(runpy $P "$(j_bash coder 'sed -n 1,40p .claude/skills/bead-pipeline/SKIL
 ok 0 "$(runpy $P "$(j_bash coder 'mix test')")" "subagent may run tests"
 ok 0 "$(runpy $P "$(j_bash coder 'git push -u origin bead/x')")" "subagent may push"
 
+# Redirects that only duplicate a file descriptor or hit /dev/null are reads.
+ok 0 "$(runpy $P "$(j_bash coder 'bash .claude/hooks/session-start.sh 2>&1 | tail -20')")" "2>&1 on a pipeline read is not a write"
+ok 0 "$(runpy $P "$(j_bash coder 'cat .claude/skills/bead-pipeline/SKILL.md 2>/dev/null')")" "2>/dev/null is not a write"
+ok 0 "$(runpy $P "$(j_bash coder 'mix test >/dev/null 2>&1; grep -n Rules CLAUDE.md')")" ">/dev/null then a read is not a write"
+ok 0 "$(runpy $P "$(j_bash coder 'grep -c x AGENTS.md >&2')")" ">&2 is not a write"
+ok 2 "$(runpy $P "$(j_bash coder 'echo x 2>&1 > .claude/settings.json')")" "a real redirect after a dup is still refused"
+ok 2 "$(runpy $P "$(j_bash coder 'echo x >> CLAUDE.md')")" "append to CLAUDE.md is still refused"
+ok 2 "$(runpy $P "$(j_bash coder 'mix test 2>&1 | tee .claude/hooks/log.txt')")" "tee into .claude is still refused"
+
 echo "== gates.sh =="
 G=gates.sh
 # On PreToolUse the gate must ignore anything that is not a push.

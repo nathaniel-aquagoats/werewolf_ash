@@ -27,6 +27,12 @@ PROTECTED = (
     ".formatter.exs",
 )
 
+# Redirects that write nothing the worker owns: file-descriptor duplication
+# (2>&1, >&2) and the bit bucket (>/dev/null, 2>/dev/null). Stripped before the
+# write-intent check, or a plain read like "cat SKILL.md 2>&1 | tail" is refused
+# because the ">" in "2>&1" looks like a file write. Seen 2026-09-12 on PR #4.
+HARMLESS_REDIRECT = re.compile(r"(\d*>&\d+|\d*>>?\s*/dev/null)")
+
 # Shell constructs that modify a file rather than read it.
 WRITE_INTENT = re.compile(
     r"(>>?|\btee\b|\bsed\b[^|;]*\s-i|\bcp\b|\bmv\b|\brm\b|\bln\b|\btruncate\b"
@@ -73,7 +79,7 @@ def main():
     tool_input = payload.get("tool_input") or {}
 
     if tool == "Bash":
-        command = tool_input.get("command", "")
+        command = HARMLESS_REDIRECT.sub(" ", tool_input.get("command", ""))
         if not WRITE_INTENT.search(command):
             return 0
         target = protected_hit(command)
