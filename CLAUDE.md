@@ -245,7 +245,7 @@ All under `.claude/hooks/`. Tests: `bash .claude/hooks/test-hooks.sh`.
 | File | Runs | Does |
 |---|---|---|
 | `gates.sh` | hook: `git push`, and `coder` finishing | `mix compile --warnings-as-errors`, `mix ash.codegen --check`, `mix lint`, `mix test`; exit 2 with the failing tail |
-| `protect-pipeline.py` | hook: Edit/Write/Bash | Refuses subagent writes to `.claude/`, `.beads/`, `CLAUDE.md`, `AGENTS.md`, `.credo.exs`, `.formatter.exs`, and to `docs/specs/` unless the subagent is `spec-author`. The main session is unaffected |
+| `protect-pipeline.py` | hook: Edit/Write/Bash | Refuses subagent writes to `.claude/`, `.beads/`, `CLAUDE.md`, `AGENTS.md`, `.credo.exs`, `.formatter.exs`, and to `docs/specs/` unless the subagent is `spec-author`. A named teammate reports its name, not its type, so **name spec-author teammates `spec-author-<suffix>`** or they cannot write specs. The main session is unaffected |
 | `session-start.sh` | hook: SessionStart | Starts Postgres, runs `sync-beads.sh`, runs `bd prime` |
 | `next-bead.py` | cloud orchestrator; sync report | Prints the queue's decision: `next`, `continue`, `paused`, `busy`, `idle`, or why a named bead can't start |
 | `fire-routine.sh` | coordinator, by hand | Starts the routine, optionally naming a bead |
