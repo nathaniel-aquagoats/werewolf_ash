@@ -8,6 +8,7 @@ defmodule WerewolfAsh.Generators do
   use Ash.Generator
 
   alias WerewolfAsh.Accounts.User
+  alias WerewolfAsh.Games
   alias WerewolfAsh.Games.Game
   alias WerewolfAsh.Games.Player
 
@@ -45,18 +46,22 @@ defmodule WerewolfAsh.Generators do
 
   @doc """
   A seat in a game. Pass `game_id:` to seat several players in one game and
-  `role:` to deal a role; `alive` can only be flipped through `update_player`.
+  `role:` to deal a role (a second `update_player` step run after the seat is
+  created, since `Player`'s `:create` action no longer accepts `role`
+  directly); `alive` can only be flipped through `update_player`.
   """
   def player(opts \\ []) do
+    {role, opts} = Keyword.pop(opts, :role, nil)
+
     changeset_generator(
       Player,
       :create,
       defaults: [
         # Lazy, so an overridden game_id/user_id does not create a spare record.
         game_id: StreamData.repeatedly(fn -> generate(game()).id end),
-        user_id: StreamData.repeatedly(fn -> generate(user()).id end),
-        role: nil
+        user_id: StreamData.repeatedly(fn -> generate(user()).id end)
       ],
+      after_action: fn player -> Games.update_player!(player, %{role: role}) end,
       overrides: opts
     )
   end

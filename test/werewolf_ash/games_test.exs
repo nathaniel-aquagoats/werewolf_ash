@@ -35,7 +35,8 @@ defmodule WerewolfAsh.GamesTest do
       assert game.owner_id == owner.id
       assert game.owner.id == owner.id
 
-      assert Enum.map(game.players, & &1.user_id) == [alice.id, bob.id]
+      # create_game seats the owner too, so the owner's seat leads the list.
+      assert Enum.map(game.players, & &1.user_id) == [owner.id, alice.id, bob.id]
 
       for player <- game.players do
         assert player.game_id == game.id
@@ -59,7 +60,11 @@ defmodule WerewolfAsh.GamesTest do
       assert game.day_start == ~T[08:00:00]
       assert game.day_end == ~T[20:00:00]
       assert game.state == :lobby
-      assert Games.get_game!(game.id, load: :players).players == []
+
+      # no `players` argument still seats exactly one player: the owner.
+      assert [player] = Games.get_game!(game.id, load: :players).players
+      assert player.user_id == owner.id
+      assert is_nil(player.role)
     end
 
     test "looks a game up by its join code" do
@@ -133,12 +138,22 @@ defmodule WerewolfAsh.GamesTest do
   describe "phase transitions" do
     # 2026-06-15 is an ordinary summer day: London is BST (UTC+1), New York EDT (UTC-4).
 
+    # `start` now needs an owner actor and at least 5 seated players (rules
+    # 8-9); seats 4 more players alongside the game's own auto-seated owner
+    # and hands back both so the caller can pass `actor: owner`.
+    defp ready(opts \\ []) do
+      owner = generate(user())
+      game = generate(game(Keyword.put(opts, :owner_id, owner.id)))
+      generate_many(player(game_id: game.id), 4)
+      %{game: game, owner: owner}
+    end
+
     test "walk lobby -> day -> night -> day on the game's local clock (London)" do
-      game =
-        generate(game(timezone: "Europe/London", day_start: ~T[08:00:00], day_end: ~T[20:00:00]))
+      %{game: game, owner: owner} =
+        ready(timezone: "Europe/London", day_start: ~T[08:00:00], day_end: ~T[20:00:00])
 
       # 10:30 BST is daytime, so the first phase is a day ending at 20:00 BST.
-      game = Games.start_game!(game, %{now: ~U[2026-06-15 09:30:00Z]})
+      game = Games.start_game!(game, %{now: ~U[2026-06-15 09:30:00Z]}, actor: owner)
       assert game.state == :day
       assert game.phase_ends_at == ~U[2026-06-15 19:00:00.000000Z]
 
@@ -187,13 +202,11 @@ defmodule WerewolfAsh.GamesTest do
     end
 
     test "a start after dusk lands in night and ends at the next dawn (New York)" do
-      game =
-        generate(
-          game(timezone: "America/New_York", day_start: ~T[07:30:00], day_end: ~T[19:30:00])
-        )
+      %{game: game, owner: owner} =
+        ready(timezone: "America/New_York", day_start: ~T[07:30:00], day_end: ~T[19:30:00])
 
       # 23:00 EDT on the 15th
-      game = Games.start_game!(game, %{now: ~U[2026-06-16 03:00:00Z]})
+      game = Games.start_game!(game, %{now: ~U[2026-06-16 03:00:00Z]}, actor: owner)
       assert game.state == :night
       assert game.phase_ends_at == ~U[2026-06-16 11:30:00.000000Z]
       assert [%{kind: :night, number: 1, ended_at: nil}] = phases(game)
@@ -207,18 +220,18 @@ defmodule WerewolfAsh.GamesTest do
     end
 
     test "a start before dawn is a night that ends at dawn the same day" do
-      game = generate(game())
+      %{game: game, owner: owner} = ready()
 
-      game = Games.start_game!(game, %{now: ~U[2026-06-15 05:00:00Z]})
+      game = Games.start_game!(game, %{now: ~U[2026-06-15 05:00:00Z]}, actor: owner)
       assert game.state == :night
       assert game.phase_ends_at == ~U[2026-06-15 08:00:00.000000Z]
     end
 
     test "a transition made exactly on a boundary schedules the following one" do
-      game = generate(game())
+      %{game: game, owner: owner} = ready()
 
       # exactly day_start: day, ending at day_end today
-      game = Games.start_game!(game, %{now: ~U[2026-06-15 08:00:00Z]})
+      game = Games.start_game!(game, %{now: ~U[2026-06-15 08:00:00Z]}, actor: owner)
       assert game.state == :day
       assert game.phase_ends_at == ~U[2026-06-15 20:00:00.000000Z]
 
@@ -229,9 +242,9 @@ defmodule WerewolfAsh.GamesTest do
 
     test "boundaries follow the local clock across a DST change" do
       # London springs forward at 01:00 UTC on 2026-03-29.
-      game = generate(game(timezone: "Europe/London"))
+      %{game: game, owner: owner} = ready(timezone: "Europe/London")
 
-      game = Games.start_game!(game, %{now: ~U[2026-03-28 08:00:00Z]})
+      game = Games.start_game!(game, %{now: ~U[2026-03-28 08:00:00Z]}, actor: owner)
       assert game.phase_ends_at == ~U[2026-03-28 20:00:00.000000Z]
 
       # 08:00 BST is 07:00 UTC: an eleven-hour night.
@@ -242,32 +255,30 @@ defmodule WerewolfAsh.GamesTest do
     test "a boundary in a DST gap or overlap resolves to a single instant" do
       # New York springs forward at 02:00 EST on 2026-03-08, so 02:30 does not
       # exist that day: the night ends at the first instant after the gap.
-      game =
-        generate(
-          game(timezone: "America/New_York", day_start: ~T[02:30:00], day_end: ~T[14:00:00])
-        )
+      %{game: game, owner: owner} =
+        ready(timezone: "America/New_York", day_start: ~T[02:30:00], day_end: ~T[14:00:00])
 
-      game = Games.start_game!(game, %{now: ~U[2026-03-08 00:00:00Z]})
+      game = Games.start_game!(game, %{now: ~U[2026-03-08 00:00:00Z]}, actor: owner)
       assert game.state == :night
       assert game.phase_ends_at == ~U[2026-03-08 07:00:00.000000Z]
 
       # It falls back at 02:00 EDT on 2026-11-01, so 01:30 happens twice: the
       # first occurrence (still EDT) wins.
-      game =
-        generate(
-          game(timezone: "America/New_York", day_start: ~T[01:30:00], day_end: ~T[14:00:00])
-        )
+      %{game: game, owner: owner} =
+        ready(timezone: "America/New_York", day_start: ~T[01:30:00], day_end: ~T[14:00:00])
 
-      game = Games.start_game!(game, %{now: ~U[2026-11-01 00:00:00Z]})
+      game = Games.start_game!(game, %{now: ~U[2026-11-01 00:00:00Z]}, actor: owner)
       assert game.state == :night
       assert game.phase_ends_at == ~U[2026-11-01 05:30:00.000000Z]
     end
 
     test "now defaults to the current time" do
-      game = generate(game())
+      %{game: game, owner: owner} = ready()
       before = DateTime.utc_now()
 
-      game = Games.start_game!(game)
+      # `now` stays omitted (that omission is the point of this test); the
+      # actor is passed as `opts` in its place.
+      game = Games.start_game!(game, actor: owner)
 
       assert game.state in [:day, :night]
       assert DateTime.compare(game.phase_ends_at, before) == :gt
@@ -276,7 +287,7 @@ defmodule WerewolfAsh.GamesTest do
     end
 
     test "rejects transitions that do not match the current state" do
-      game = generate(game())
+      %{game: game, owner: owner} = ready()
       now = ~U[2026-06-15 12:00:00Z]
 
       assert {:error, %Ash.Error.Invalid{errors: [%NoMatchingTransition{}]}} =
@@ -285,11 +296,11 @@ defmodule WerewolfAsh.GamesTest do
       assert {:error, %Ash.Error.Invalid{errors: [%NoMatchingTransition{}]}} =
                Games.end_night(game, %{now: now})
 
-      game = Games.start_game!(game, %{now: now})
+      game = Games.start_game!(game, %{now: now}, actor: owner)
       assert game.state == :day
 
       assert {:error, %Ash.Error.Invalid{errors: [%NoMatchingTransition{}]}} =
-               Games.start_game(game, %{now: now})
+               Games.start_game(game, %{now: now}, actor: owner)
 
       assert {:error, %Ash.Error.Invalid{errors: [%NoMatchingTransition{}]}} =
                Games.end_night(game, %{now: now})
@@ -297,6 +308,53 @@ defmodule WerewolfAsh.GamesTest do
       # a rejected transition writes nothing
       assert Games.get_game!(game.id).state == :day
       assert [%{number: 1, kind: :day, ended_at: nil}] = phases(game)
+    end
+
+    test "requires the owner as actor, and leaves every player roleless" do
+      %{game: game, owner: owner} = ready()
+      stranger = generate(user())
+
+      assert {:error, %Ash.Error.Invalid{errors: [error]}} = Games.start_game(game)
+      assert %Ash.Error.Changes.InvalidAttribute{field: :owner_id} = error
+
+      assert {:error, %Ash.Error.Invalid{errors: [error]}} =
+               Games.start_game(game, %{}, actor: stranger)
+
+      assert %Ash.Error.Changes.InvalidAttribute{field: :owner_id} = error
+
+      assert Games.get_game!(game.id).state == :lobby
+
+      for player <- Games.list_players!(query: [filter: [game_id: game.id]]) do
+        assert is_nil(player.role)
+      end
+    end
+
+    test "requires at least 5 seated players" do
+      owner = generate(user())
+      game = generate(game(owner_id: owner.id))
+      generate_many(player(game_id: game.id), 2)
+
+      assert {:error, %Ash.Error.Invalid{errors: [error]}} =
+               Games.start_game(game, %{}, actor: owner)
+
+      # `:players` is not a real attribute/argument, so Ash reports it as
+      # InvalidChanges (a `fields` list) rather than InvalidAttribute.
+      assert %Ash.Error.Changes.InvalidChanges{fields: [:players]} = error
+      assert Games.get_game!(game.id).state == :lobby
+    end
+
+    test "deals exactly one role to every seated player once the owner starts the game" do
+      %{game: game, owner: owner} = ready()
+
+      game = Games.start_game!(game, actor: owner)
+      assert game.state in [:day, :night]
+
+      roles =
+        Games.list_players!(query: [filter: [game_id: game.id]])
+        |> Enum.map(& &1.role)
+        |> Enum.frequencies()
+
+      assert roles == %{seer: 1, bodyguard: 1, hunter: 1, werewolf: 1, villager: 1}
     end
 
     defp phases(game) do
@@ -318,11 +376,13 @@ defmodule WerewolfAsh.GamesTest do
       assert player.alive
       assert is_nil(player.role)
 
-      assert [%{id: id}] = Games.list_players!(query: [filter: [game_id: game.id]])
-      assert id == player.id
+      # the game's own owner is already seated, so this is the second player.
+      assert Games.list_players!(query: [filter: [game_id: game.id]]) |> length() == 2
 
       Games.remove_player!(player)
-      assert Games.list_players!(query: [filter: [game_id: game.id]]) == []
+
+      assert Games.list_players!(query: [filter: [game_id: game.id]]) |> Enum.map(& &1.user_id) ==
+               [game.owner_id]
     end
 
     test "a user can only hold one seat per game", %{game: game} do
@@ -335,6 +395,30 @@ defmodule WerewolfAsh.GamesTest do
       other_game = generate(game())
       assert %{user_id: user_id} = Games.add_player!(other_game.id, alice.id)
       assert user_id == alice.id
+    end
+
+    test "rejects role as an unrecognized input", %{game: game} do
+      alice = generate(user())
+
+      assert {:error, %Ash.Error.Invalid{}} = Games.add_player(game.id, alice.id, %{role: :seer})
+    end
+
+    test "a seat can be given up while the game is in the lobby", %{game: game} do
+      player = Games.add_player!(game.id, generate(user()).id)
+
+      assert Games.remove_player(player) == :ok
+      assert {:error, %Ash.Error.Invalid{}} = Games.get_player(player.id)
+    end
+
+    test "a seat cannot be given up once the game has left the lobby" do
+      %{game: game, owner: owner} = ready()
+      [player | _] = Games.list_players!(query: [filter: [game_id: game.id]])
+
+      Games.start_game!(game, actor: owner)
+
+      assert {:error, %Ash.Error.Invalid{errors: [error]}} = Games.remove_player(player)
+      assert %Ash.Error.Changes.InvalidAttribute{field: :game_id} = error
+      assert Games.get_player!(player.id).id == player.id
     end
 
     test "updates role and aliveness", %{game: game} do
@@ -354,6 +438,62 @@ defmodule WerewolfAsh.GamesTest do
       Games.destroy_game!(game)
 
       assert Games.list_players!(query: [filter: [game_id: game.id]]) == []
+    end
+  end
+
+  describe "join_game" do
+    test "seats a user in the game named by its join_code" do
+      game = generate(game())
+      user = generate(user())
+
+      player = Games.join_game!(game.join_code, user.id)
+
+      assert player.user_id == user.id
+      assert player.game_id == game.id
+      assert is_nil(player.role)
+    end
+
+    test "an unknown join_code errors on :join_code and creates no player" do
+      user = generate(user())
+
+      assert {:error, %Ash.Error.Invalid{errors: errors}} = Games.join_game("NOPE0000", user.id)
+
+      assert Enum.any?(
+               errors,
+               &match?(%Ash.Error.Changes.InvalidAttribute{field: :join_code}, &1)
+             )
+    end
+
+    test "a join_code for a game that has already left the lobby errors on :join_code" do
+      %{game: game, owner: owner} = ready()
+      Games.start_game!(game, actor: owner)
+      user = generate(user())
+
+      assert {:error, %Ash.Error.Invalid{errors: [error]}} =
+               Games.join_game(game.join_code, user.id)
+
+      # :join_code is an action argument, not an attribute, so Ash reports
+      # this one as InvalidArgument rather than InvalidAttribute.
+      assert %Ash.Error.Changes.InvalidArgument{field: :join_code} = error
+    end
+
+    test "rejects role as an unrecognized input, the same as add_player" do
+      game = generate(game())
+      user = generate(user())
+
+      assert {:error, %Ash.Error.Invalid{}} =
+               Games.join_game(game.join_code, user.id, %{role: :seer})
+    end
+
+    test "joining twice fails the same way as a duplicate add_player seat" do
+      game = generate(game())
+      user = generate(user())
+      Games.join_game!(game.join_code, user.id)
+
+      assert {:error, %Ash.Error.Invalid{errors: [error]}} =
+               Games.join_game(game.join_code, user.id)
+
+      assert %Ash.Error.Changes.InvalidAttribute{field: :game_id} = error
     end
   end
 

@@ -20,7 +20,11 @@ defmodule WerewolfAsh.Games.Game do
     extensions: [AshStateMachine]
 
   alias WerewolfAsh.Games.Game.Changes.AdvancePhase
+  alias WerewolfAsh.Games.Game.Changes.DealRoles
+  alias WerewolfAsh.Games.Game.Changes.SeatOwner
+  alias WerewolfAsh.Games.Game.Validations.ActorIsOwner
   alias WerewolfAsh.Games.Game.Validations.KnownTimezone
+  alias WerewolfAsh.Games.Game.Validations.MinimumPlayers
 
   @states [:lobby, :day, :night, :hunter_pending, :finished]
 
@@ -55,6 +59,7 @@ defmodule WerewolfAsh.Games.Game do
         default []
       end
 
+      change SeatOwner
       change manage_relationship(:players, type: :create)
     end
 
@@ -75,6 +80,10 @@ defmodule WerewolfAsh.Games.Game do
         default &DateTime.utc_now/0
       end
 
+      validate ActorIsOwner
+      validate MinimumPlayers
+
+      change DealRoles
       change {AdvancePhase, to: :by_clock}
     end
 

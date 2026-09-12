@@ -1,11 +1,12 @@
 defmodule WerewolfAsh.Games.Game.Changes.AdvancePhaseTest do
-  use ExUnit.Case, async: true
+  use WerewolfAsh.DataCase, async: true
 
   alias Ash.Changeset
   alias Ash.Error.Changes.InvalidAttribute
   alias WerewolfAsh.Games.Game
   alias WerewolfAsh.Games.Game.Changes.AdvancePhase
   alias WerewolfAsh.Games.Game.Clock
+  alias WerewolfAsh.Generators
 
   defp game(attrs) do
     struct(
@@ -47,10 +48,21 @@ defmodule WerewolfAsh.Games.Game.Changes.AdvancePhaseTest do
     end
 
     test "resolves :by_clock from the game's own window" do
-      game = game(state: :lobby, day_start: ~T[22:00:00], day_end: ~T[06:00:00])
+      # `:start` now also runs `ActorIsOwner`/`MinimumPlayers` (rules 8-9),
+      # which query the database, so this one test needs a real persisted
+      # game with an owner actor and enough seated players to stay valid.
+      owner = Generators.generate(Generators.user())
+
+      game =
+        Generators.generate(
+          Generators.game(owner_id: owner.id, day_start: ~T[22:00:00], day_end: ~T[06:00:00])
+        )
+
+      Generators.generate_many(Generators.player(game_id: game.id), 4)
+
       now = ~U[2026-01-01 23:00:00Z]
 
-      changeset = Changeset.for_update(game, :start, %{now: now}, authorize?: false)
+      changeset = Changeset.for_update(game, :start, %{now: now}, actor: owner)
 
       assert {:ok, expected_kind} = Clock.window_at(game, now)
       assert changeset.valid?
