@@ -138,6 +138,12 @@ defmodule WerewolfAsh.Accounts.User do
         end
       end
     end
+
+    update :set_name do
+      description "Sets the acting user's own display name."
+      accept [:name]
+      require_attributes [:name]
+    end
   end
 
   policies do
@@ -154,6 +160,11 @@ defmodule WerewolfAsh.Accounts.User do
       description "A user may only read themselves."
       authorize_if expr(id == ^actor(:id))
     end
+
+    policy action(:set_name) do
+      description "A user may only set their own display name."
+      authorize_if expr(id == ^actor(:id))
+    end
   end
 
   attributes do
@@ -162,6 +173,13 @@ defmodule WerewolfAsh.Accounts.User do
     attribute :email, :ci_string do
       allow_nil? false
       public? true
+    end
+
+    attribute :name, :string do
+      description "The user's own chosen display name; absent until they set it."
+      allow_nil? true
+      public? true
+      constraints min_length: 1, max_length: 40, trim?: true
     end
   end
 

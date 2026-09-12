@@ -16,7 +16,8 @@ defmodule WerewolfAsh.Generators do
   def user(opts \\ []) do
     seed_generator(
       %User{
-        email: sequence(:user_email, &"user#{&1}@example.com")
+        email: sequence(:user_email, &"user#{&1}@example.com"),
+        name: sequence(:user_name, &"User #{&1}")
       },
       overrides: opts
     )

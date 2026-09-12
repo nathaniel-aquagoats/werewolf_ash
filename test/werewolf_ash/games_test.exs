@@ -133,6 +133,45 @@ defmodule WerewolfAsh.GamesTest do
 
       assert %{timezone: "Asia/Tokyo"} = Games.update_game!(game, %{timezone: "Asia/Tokyo"})
     end
+
+    test "a nameless owner cannot create a game; a named owner can" do
+      nameless = generate(user(name: nil))
+
+      assert {:error, %Ash.Error.Invalid{errors: [error]}} =
+               Games.create_game(%{
+                 name: "No Name",
+                 join_code: "NAME#{System.unique_integer([:positive])}",
+                 owner_id: nameless.id
+               })
+
+      assert %{fields: [:name]} = error
+
+      named = generate(user(name: "Owner"))
+
+      assert %{owner_id: owner_id} =
+               Games.create_game!(%{
+                 name: "Has Name",
+                 join_code: "NAME#{System.unique_integer([:positive])}",
+                 owner_id: named.id
+               })
+
+      assert owner_id == named.id
+    end
+
+    test "a nameless co-player in the players list fails the whole call, owner included" do
+      owner = generate(user(name: "Owner"))
+      nameless = generate(user(name: nil))
+
+      assert {:error, %Ash.Error.Invalid{errors: [error]}} =
+               Games.create_game(%{
+                 name: "Bad Co-Player",
+                 join_code: "NAME#{System.unique_integer([:positive])}",
+                 owner_id: owner.id,
+                 players: [%{user_id: nameless.id}]
+               })
+
+      assert %{fields: [:name]} = error
+    end
   end
 
   describe "phase transitions" do
@@ -439,6 +478,32 @@ defmodule WerewolfAsh.GamesTest do
 
       assert Games.list_players!(query: [filter: [game_id: game.id]]) == []
     end
+
+    test "refuses to seat a nameless user and creates no player", %{game: game} do
+      nameless = generate(user(name: nil))
+
+      assert {:error, %Ash.Error.Invalid{errors: [error]}} =
+               Games.add_player(game.id, nameless.id)
+
+      assert %{fields: [:name]} = error
+      assert Games.list_players!(query: [filter: [user_id: nameless.id]]) == []
+    end
+
+    test "seats a named user, exactly as before this rule existed", %{game: game} do
+      named = generate(user(name: "Carl"))
+
+      assert %{user_id: user_id} = Games.add_player!(game.id, named.id)
+      assert user_id == named.id
+    end
+
+    test "two players may share the identical display name in one game", %{game: game} do
+      alice = generate(user(name: "Same Name"))
+      bob = generate(user(name: "Same Name"))
+
+      assert %{id: alice_player_id} = Games.add_player!(game.id, alice.id)
+      assert %{id: bob_player_id} = Games.add_player!(game.id, bob.id)
+      assert alice_player_id != bob_player_id
+    end
   end
 
   describe "join_game" do
@@ -451,6 +516,35 @@ defmodule WerewolfAsh.GamesTest do
       assert player.user_id == user.id
       assert player.game_id == game.id
       assert is_nil(player.role)
+    end
+
+    test "refuses to seat a nameless user and creates no player" do
+      game = generate(game())
+      nameless = generate(user(name: nil))
+
+      assert {:error, %Ash.Error.Invalid{errors: [error]}} =
+               Games.join_game(game.join_code, nameless.id)
+
+      assert %{fields: [:name]} = error
+      assert Games.list_players!(query: [filter: [user_id: nameless.id]]) == []
+    end
+
+    test "seats a named user via join, exactly as before this rule existed" do
+      game = generate(game())
+      named = generate(user(name: "Dana"))
+
+      assert %{user_id: user_id} = Games.join_game!(game.join_code, named.id)
+      assert user_id == named.id
+    end
+
+    test "two players may share the identical display name via join in one game" do
+      game = generate(game())
+      alice = generate(user(name: "Twin"))
+      bob = generate(user(name: "Twin"))
+
+      assert %{id: alice_player_id} = Games.join_game!(game.join_code, alice.id)
+      assert %{id: bob_player_id} = Games.join_game!(game.join_code, bob.id)
+      assert alice_player_id != bob_player_id
     end
 
     test "an unknown join_code errors on :join_code and creates no player" do
