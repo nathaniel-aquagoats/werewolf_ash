@@ -9,6 +9,9 @@ defmodule WerewolfAsh.Games.Player do
     domain: WerewolfAsh.Games,
     data_layer: AshPostgres.DataLayer
 
+  alias WerewolfAsh.Games.Player.Changes.ResolveGameByJoinCode
+  alias WerewolfAsh.Games.Player.Validations.GameInLobby
+
   postgres do
     table "players"
     repo WerewolfAsh.Repo
@@ -19,7 +22,7 @@ defmodule WerewolfAsh.Games.Player do
   end
 
   actions do
-    defaults [:read, :destroy]
+    defaults [:read]
 
     read :living_in_game do
       description "The players of one game that are still alive."
@@ -29,12 +32,30 @@ defmodule WerewolfAsh.Games.Player do
 
     create :create do
       primary? true
-      accept [:game_id, :user_id, :role]
+      accept [:game_id, :user_id]
+    end
+
+    create :join do
+      description "Seat the given user into the game named by its join_code."
+      accept [:user_id]
+
+      argument :join_code, :string do
+        allow_nil? false
+      end
+
+      change ResolveGameByJoinCode
+      validate {GameInLobby, field: :join_code}
     end
 
     update :update do
       primary? true
       accept [:role, :alive]
+    end
+
+    destroy :destroy do
+      primary? true
+      require_atomic? false
+      validate {GameInLobby, field: :game_id}
     end
   end
 

@@ -27,6 +27,7 @@ defmodule WerewolfAsh.Games do
 
     resource WerewolfAsh.Games.Player do
       define :add_player, action: :create, args: [:game_id, :user_id]
+      define :join_game, action: :join, args: [:join_code, :user_id]
       define :update_player, action: :update
       define :remove_player, action: :destroy
       define :get_player, action: :read, get_by: [:id]
