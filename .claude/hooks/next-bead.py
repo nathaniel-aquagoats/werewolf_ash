@@ -91,9 +91,13 @@ def open_prs():
     return json.loads(result.stdout)
 
 
+# Both reads follow main's first parents only. A PR merged with a merge commit
+# (spec PR #8 was, 2026-09-13) would otherwise expose its branch commits: the
+# spec's authoring time instead of its merge time, and an orchestrator's
+# "<bead-id>: start" commit posing as the bead being implemented.
 def implemented_ids(ref):
     ids = set()
-    for subject in git("log", "--format=%s", ref).splitlines():
+    for subject in git("log", "--first-parent", "--format=%s", ref).splitlines():
         match = re.match("(" + BEAD_ID + "):", subject)
         if match:
             ids.add(match.group(1))
@@ -107,7 +111,7 @@ def specs(ref):
         match = re.fullmatch("(" + BEAD_ID + r")\.md", os.path.basename(path))
         if not match:
             continue
-        added = git("log", ref, "--diff-filter=A", "--format=%ct", "-1", "--", path).strip()
+        added = git("log", "--first-parent", ref, "--diff-filter=A", "--format=%ct", "-1", "--", path).strip()
         found.append((int(added or 0), match.group(1), git("show", "%s:%s" % (ref, path))))
     found.sort()
     return found

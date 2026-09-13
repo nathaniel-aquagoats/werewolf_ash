@@ -224,6 +224,21 @@ for b in bbb ddd iii jjj kkk; do commit "werewolf_ash-$b.1: done"; done
 ok 3 "$(nb)" "nothing ready is idle"
 ok "idle" "$(first)" "idle says so"
 
+# A spec PR merged with a merge commit: its place in the queue is when it
+# reached main, and its branch commits say nothing about being implemented.
+base="$(g rev-parse --abbrev-ref HEAD)"
+g checkout -q -b side
+spec werewolf_ash-lll.1 "Depends on: none" "- lib/werewolf_ash/l.ex"
+commit "werewolf_ash-lll.1: start"
+g checkout -q "$base"
+spec werewolf_ash-mmm.1 "Depends on: none" "- lib/werewolf_ash/m.ex"
+n=$((n + 1))
+d="$((1767225600 + n * 60)) +0000"
+GIT_AUTHOR_DATE="$d" GIT_COMMITTER_DATE="$d" g merge -q --no-ff side -m "Merge pull request #20 from spec/werewolf_ash-lll.1"
+ok 0 "$(nb)" "specs merged with a merge commit are queued"
+ok "next werewolf_ash-mmm.1" "$(first)" "queue order is when a spec reached main, not when it was written"
+ok yes "$(has 'queued werewolf_ash-lll.1')" "a start commit inside a merged branch does not mark the bead implemented"
+
 echo 'not json' >"$PRS"
 ok 1 "$(nb)" "unreadable pull requests are an error, never a start"
 rm -rf "$R" "$PRS"
