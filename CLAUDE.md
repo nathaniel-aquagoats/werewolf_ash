@@ -228,8 +228,9 @@ The routine's prompt is only a pointer; the orchestration is
   goes to `needs-human`.
 - Never a direct push to `main`.
 
-**GitHub in the cloud is split.** Reads (`gh pr list`, `git fetch`) and
-`git push` work, but the `gh` CLI's ambient token is rejected for writes and
+**GitHub in the cloud is split.** REST reads (`gh api repos/...`), `git fetch`
+and `git push` work. GitHub GraphQL is refused with HTTP 403, which rules out
+`gh pr list` and `gh pr view` (seen 2026-09-13). And the `gh` CLI's ambient token is rejected for writes and
 `gh api` write paths are proxy-refused. PRs are created, updated, closed and
 merged with the `mcp__github__*` tools instead. Deleting a remote branch is
 impossible from the cloud (403); merged branches are pruned by the local sync.

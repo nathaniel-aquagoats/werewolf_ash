@@ -20,7 +20,7 @@ Verified 2026-09-12, and it is not what you would assume:
 
 | Operation | Use |
 |---|---|
-| Reading PRs, branches, repo state | `gh` CLI reads, or `git` — both work |
+| Reading PRs, branches, repo state | `git`, or REST: `gh api repos/<owner>/<repo>/...`. **Never `gh pr list` or `gh pr view`**: they use GitHub GraphQL, which cloud sessions refuse with HTTP 403. `mcp__github__list_pull_requests` also works |
 | `git push` to a branch | works |
 | **Creating, updating, closing or merging a PR** | **`mcp__github__*` tools only** |
 | Adding or removing a label | `mcp__github__update_issue` (labels apply to PRs) |
@@ -121,7 +121,8 @@ The owner named this bead, which is their say-so to try it again.
 
 Check out the PR's branch. If it carries `needs-human`, remove that label with
 `mcp__github__update_issue`. Read the latest review and comments
-(`gh pr view <n> --comments`) and give them to the coder **verbatim**, together
+(`gh api repos/<owner>/<repo>/pulls/<n>/reviews` and
+`gh api repos/<owner>/<repo>/issues/<n>/comments`; never `gh pr view`) and give them to the coder **verbatim**, together
 with the instruction that it is continuing a branch that must be rebased onto
 the current `main` before anything else.
 
