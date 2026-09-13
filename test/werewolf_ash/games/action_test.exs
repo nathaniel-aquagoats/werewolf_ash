@@ -25,6 +25,8 @@ defmodule WerewolfAsh.Games.ActionTest do
       Games.list_players!(query: [filter: [game_id: game.id]])
       |> Map.new(&{&1.role, &1})
 
+    assert map_size(players) == 5
+
     %{game: game, players: players}
   end
 
@@ -265,7 +267,9 @@ defmodule WerewolfAsh.Games.ActionTest do
       assert {:error, %Ash.Error.Invalid{errors: [%{field: :phase_id}]}} =
                Games.create_kill_action(night.id, p.werewolf.id, p.bodyguard.id)
 
-      assert Games.get_action!(first.id).id == first.id
+      unchanged = Games.get_action!(first.id)
+      assert unchanged.target_id == first.target_id
+      assert unchanged.result == first.result
       assert Games.get_player!(p.villager.id).alive == false
       assert Games.get_player!(p.bodyguard.id).alive == true
     end

@@ -1,5 +1,7 @@
 # werewolf_ash-qss.20: Tighten two qss.4 test assertions flagged in PR #5 review
 
+Implemented in PR #15.
+
 Depends on: none
 
 ## For the owner
