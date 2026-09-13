@@ -104,25 +104,27 @@ Real-time (wall-clock day/night) werewolf game. Ash 3 domain is the source of tr
 - Use Ash generators (`mix ash.gen.domain`, `mix ash.gen.resource`, `mix ash.codegen`) rather than hand-writing resources; consult the `ash-framework` / `reactor` skills before domain changes
 - Game rules must be testable without a clock or an interface: phase transitions are explicit actions (`end_day`, `end_night`), the scheduler only calls them
 - A reactor run from inside an action (an `after_action` hook, or a change that calls `Reactor.run`) must run synchronously. Reactor defaults to `async?: true`, which runs steps in separate tasks on other database connections; those can't see the action's uncommitted writes, so a player the action just killed reads as alive and a win check decides wrongly. The Ecto test sandbox shares one connection, so no test catches this: set it explicitly (verify the option against `deps/reactor`) and check it by reading in review
+- Background work goes through Oban (owner decision 2026-09-13): work an action triggers that need not happen in the same instant (an email, a notification, anything calling an outside system that can fail and be retried) is enqueued as an Oban job, through an AshOban trigger or an Oban worker, inside the action's own transaction. The enqueue is synchronous; the job only runs after the action commits, so it reads committed state. Never spawn a Task, an async Reactor or any other process from inside an action to do such work. Work that must be atomic with the action stays inside the transaction and synchronous: rule validations, the phase change itself, and game state that follows directly from the change, such as the win check after a wolf kill, the dawn win check in `end_night`, and the lynch and win check at dusk in `end_day` (owner decision 2026-09-13: a won game must never be observable as still in progress). Jobs must be safe to run twice: lock what they change, re-check state first, and use Oban uniqueness per record. Test with Oban's `testing: :manual`: assert the job was enqueued, then perform it
 - Rules decisions already made: bodyguard picks by day and protects that night, and may not protect the same player two days in a row; hunter gets a 1h window after death then a random target; lynch is plurality with tie = no lynch; the wolf kill is a single act, not a vote: any living werewolf may kill during the night, the first kill is the pack's one action for that night and is final (any later kill that night, by any wolf, is refused), and the victim dies immediately unless the bodyguard protected them that day, in which case the kill is spent and they survive; wolves coordinate in the wolves chat channel, not through a tally; the action type is :kill; seer gets an immediate yes/no
 - Real time: the game follows the natural flow of time. Only the villagers' day vote is deliberative; every other action (the wolves' kill, the seer's investigation, the hunter's shot) takes effect the moment it happens. The bodyguard is the one exception that must plan ahead: protection is chosen by day and locked when night starts, which is what keeps it from racing the wolves' kill
 - Deaths are announced: at the start of each day, everyone is told who died since the last announcement and what role each held, and a dead player's role becomes public from that announcement; at the start of each night, everyone is told night is starting
-- Actions are used once: a player may take each action type once per phase, and a second attempt is refused rather than replacing the first. That includes the day vote, so a villager's vote is final once cast
+- Actions are used once: a player may take each action type once per phase, and a second attempt is refused rather than replacing the first. The two daytime choices are the exception (owner decision 2026-09-13): while alive, a player may change or withdraw their day vote until voting closes, and the bodyguard may change or withdraw their protection until night starts. When the vote resolves, only living players' current votes for living targets count, and a bodyguard who is dead when night starts protects no one
 - Chat: two channels per game, `village` (all living players) and `wolves` (living werewolves), open in every phase; dead players can read every channel but post in none; living non-wolves never see the wolves channel
+- The dead see everything (owner decision 2026-09-13): a dead player is a spectator in an afterlife and can see everything in their game, including every role, every action (kills, investigations, protections, and votes, including votes that no longer count) and every chat channel, but can act and post in none. The living see only what their own seat allows. Once a game is finished, every role is visible to every player
 - Alias style (enforced by `mix lint` via Credo): never group aliases (`alias Foo.{Bar, Baz}` -> one `alias` per line); never call a nested module fully qualified — `Foo.Bar.baz()` must be `alias Foo.Bar` + `Bar.baz()`. Elixir stdlib modules (`Enum`, `DateTime`, `Ecto`-style single names) are exempt per Credo's defaults
 - Do not commit or push unless asked. Spec pull requests are the standing exception (see Bead lifecycle)
 
 ## Bead lifecycle
 
-Beads are specified locally, approved by merging a spec pull request, built one
-at a time by a claude.ai cloud routine that works through the approved specs,
-and merged by the reviewer that checked them. The old worktree-and-coordinator
+Beads are specified locally, approved by merging a spec pull request, built by
+a claude.ai cloud routine that works through the approved specs, up to two at
+a time, and merged by the reviewer that checked them. The old worktree-and-coordinator
 workflow is retired; `.claude/worktrees/` is no longer used.
 
 ```
 grill the owner -> spec-author -> spec-reviewer -> spec PR -> owner merges it
                                                                     |
-      queue (any PR closing, daily, or by hand) -> coder -> code-reviewer -> merge
+      queue (any PR closing, every 12h, or by hand) -> coder -> code-reviewer -> merge
                                                                     |
                                                SessionStart sync closes the bead
 ```
@@ -134,8 +136,8 @@ grill the owner -> spec-author -> spec-reviewer -> spec PR -> owner merges it
   answer, until the design is settled. The owner asked for this: a question
   answered up front is a spec revision round that never happens.
 - `spec-author` (sonnet) writes `docs/specs/<bead-id>.md`: a `Depends on:`
-  line, a **For the owner** card (what changes, decisions with
-  recommendations, rule changes), then Goal, numbered testable Rules, Out of
+  line, a **For the owner** card (what changes, the decisions the owner made,
+  rule changes), then Goal, numbered testable Rules, Out of
   scope, Acceptance naming public functions, advisory Touches.
 - `spec-reviewer` (opus) checks it against the bead, the code and the settled
   decisions here, including that the header and the owner card are true. It
@@ -144,6 +146,11 @@ grill the owner -> spec-author -> spec-reviewer -> spec PR -> owner merges it
   AshGraphql behaves get the review. Beads that only change docs, config or
   wording skip it. If usage limits start to bite, move the middle tier to a
   Sonnet reviewer before dropping review.
+- **No open questions in a spec PR.** The author reports every judgement call
+  it made. Before the PR opens, the coordinator asks the owner each one here in
+  chat, with a recommendation, and the answers are written into the card. The
+  card's **Decisions** list what the owner already decided, so merging never
+  answers anything. The owner asked for this on 2026-09-13.
 - **The coordinator runs the loop quietly.** Authoring, one review pass and at
   most one revision happen without relaying each agent message to the owner.
   Only blockers go back to the author; the coordinator fixes nits directly in
@@ -158,8 +165,8 @@ grill the owner -> spec-author -> spec-reviewer -> spec PR -> owner merges it
 - **A spec PR title must not start `<bead-id>:`.** The sync closes a bead from
   that title shape, and the queue treats a commit subject of that shape on
   `main` as the bead being implemented.
-- **The owner approves by merging**, which accepts the card's
-  recommendations. A comment is a change request: the SessionStart report
+- **The owner approves by merging.** Every decision was already answered in
+  chat. A comment is a change request: the SessionStart report
   lists spec PRs with comments newer than their last push, and the coordinator
   acts on them, grilling the owner if a comment opens a design question,
   having the author revise, and pushing to the same PR.
@@ -167,17 +174,27 @@ grill the owner -> spec-author -> spec-reviewer -> spec PR -> owner merges it
 
 ### The queue
 
-The routine runs whenever a pull request closes (merged or not), once a day,
-and by hand through its API (`.claude/hooks/fire-routine.sh [<bead-id>]`). What a run
+Runs start whenever a pull request closes (merged or not), every 12 hours, and
+by hand through the API (`.claude/hooks/fire-routine.sh [<bead-id>]`). What a run
 does is decided by `.claude/hooks/next-bead.py`, from `main` and the open pull
 requests:
 
-- **Paused** while any PR labelled `needs-human` is open, until the owner looks.
-- **Busy** while any `bead/*` PR is open: one bead at a time.
-- Otherwise it starts the **earliest-merged spec** that is not implemented and
-  whose `Depends on:` beads are all implemented. Implemented means `main` has
-  a commit subject starting `<bead-id>:`, which every bead squash has and so do
-  beads finished before this flow, or the spec is stamped `Implemented in PR #N.`
+- **Paused** for new starts while any PR labelled `needs-human` is open, until
+  the owner looks. Beads already running finish.
+- **Full** while two `bead/*` PRs are open: at most two beads run at once.
+- Otherwise it starts the **earliest-merged spec** that is not implemented,
+  whose `Depends on:` beads are all implemented, and that can run beside the
+  bead already running. Implemented means `main` has a commit subject starting
+  `<bead-id>:`, which every bead squash has and so do beads finished before
+  this flow, or the spec is stamped `Implemented in PR #N.`
+- **Two beads run together** only when neither depends on the other and their
+  specs' Touches sections name no common file under `lib/` or `priv/`.
+  Generated migrations and resource snapshots don't count, because a rebase
+  regenerates them. A spec whose Touches names no file is treated as touching
+  everything. A later spec may start ahead of an earlier one that conflicts.
+- Each run claims at most one bead. A merge, a scheduled sweep or a manual
+  fire fills a free slot, and `next-bead.py --claimed` settles two runs racing for
+  the same one.
 - **A named bead** skips queue order and nothing else, and resumes that bead's
   own open PR if it has one. When the owner says to implement a specific bead,
   or to retry a `needs-human` PR after looking at it, the coordinator runs
@@ -194,7 +211,8 @@ The routine's prompt is only a pointer; the orchestration is
 `.claude/skills/bead-pipeline/SKILL.md`, so it is versioned with the repo.
 
 - The orchestrator claims a bead by opening its PR, `<bead-id>: <title>` from
-  `bead/<bead-id>`, before any work, then stamps the spec on that branch with
+  `bead/<bead-id>`, before any work, confirms with `next-bead.py --claimed`
+  that no other run took the slot, then stamps the spec on that branch with
   the PR number.
 - `coder` (sonnet) implements the spec and only the spec, then pushes.
 - `code-reviewer` (opus) breaks each rule in a scratch copy to prove a test
@@ -204,11 +222,16 @@ The routine's prompt is only a pointer; the orchestration is
   sequence. Backgrounding does work — the session wakes when a subagent
   finishes — but the run must never end with the PR open and unreviewed.
 - One retry on rejection. Then the PR is labelled `needs-human`, left open, and
-  the queue pauses.
+  new starts pause.
+- A rebase conflict because another bead merged first is not a rejection: the
+  reviewer reports it, the coder rebases and regenerates, and the reviewer
+  looks again. It does not use the retry; after two such hand-backs the PR
+  goes to `needs-human`.
 - Never a direct push to `main`.
 
-**GitHub in the cloud is split.** Reads (`gh pr list`, `git fetch`) and
-`git push` work, but the `gh` CLI's ambient token is rejected for writes and
+**GitHub in the cloud is split.** REST reads (`gh api repos/...`), `git fetch`
+and `git push` work. GitHub GraphQL is refused with HTTP 403, which rules out
+`gh pr list` and `gh pr view` (seen 2026-09-13). And the `gh` CLI's ambient token is rejected for writes and
 `gh api` write paths are proxy-refused. PRs are created, updated, closed and
 merged with the `mcp__github__*` tools instead. Deleting a remote branch is
 impossible from the cloud (403); merged branches are pruned by the local sync.
@@ -247,7 +270,7 @@ All under `.claude/hooks/`. Tests: `bash .claude/hooks/test-hooks.sh`.
 | `gates.sh` | hook: `git push`, and `coder` finishing | `mix compile --warnings-as-errors`, `mix ash.codegen --check`, `mix lint`, `mix test`; exit 2 with the failing tail |
 | `protect-pipeline.py` | hook: Edit/Write/Bash | Refuses subagent writes to `.claude/`, `.beads/`, `CLAUDE.md`, `AGENTS.md`, `.credo.exs`, `.formatter.exs`, and to `docs/specs/` unless the subagent is `spec-author`. A named teammate reports its name, not its type, so **name spec-author teammates `spec-author-<suffix>`** or they cannot write specs. The main session is unaffected |
 | `session-start.sh` | hook: SessionStart | Starts Postgres, runs `sync-beads.sh`, runs `bd prime` |
-| `next-bead.py` | cloud orchestrator; sync report | Prints the queue's decision: `next`, `continue`, `paused`, `busy`, `idle`, or why a named bead can't start |
+| `next-bead.py` | cloud orchestrator; sync report | Prints the queue's decision: `next`, `continue`, `won`/`lost`, `paused`, `full`, `idle`, or why a named bead can't start |
 | `fire-routine.sh` | coordinator, by hand | Starts the routine, optionally naming a bead |
 
 ### Secrets and configuration
@@ -256,14 +279,34 @@ All under `.claude/hooks/`. Tests: `bash .claude/hooks/test-hooks.sh`.
 (`set -Ux ROUTINE_ID trig_...`), never in the repo and never in chat.
 `fire-routine.sh` reads them from the environment and refuses if they are unset.
 
-The routine ("Spec implementation Routine") has three triggers: a GitHub
-trigger on `pull_request.closed`, a daily schedule at 15:00 UTC, and its API.
-The GitHub trigger needs the Claude GitHub App installed on the repository. It
-is attached with `RemoteTrigger` `create_webhook_trigger` and the body
+Four routines run the same saved prompt and configuration: Sonnet, the
+`Agent` and `Skill` tools (the orchestrator dispatches the coder and reviewer
+as subagents), no connectors, and no pinned output branch.
+
+- **"Coding after Spec Accepted"** has the GitHub trigger on pull requests
+  closing. It needs the Claude GitHub App installed on the repository.
+- **"Queue sweep A (every 12h)"** runs at 03:00 and 15:00 UTC, and **"Queue
+  sweep B (every 12h, +25 min)"** at 03:25 and 15:25 UTC (9am and 9pm Denver
+  during daylight saving). Each run claims one bead, so the second sweep fills
+  the second slot once the first has claimed its bead, or stops. The gap is
+  25 minutes, not 10, because routine stagger delayed sweep A by about seven
+  minutes; two runs deciding at the same moment pick the same bead, and the
+  loser stops without taking the other slot. Four runs a day against the
+  routine cap.
+- **"Spec implementation Routine"** has only the API trigger that
+  `fire-routine.sh` uses. Never give it a GitHub trigger or a schedule too, or
+  runs double up.
+
+A routine created in the claude.ai form attaches every connector and pins a
+`claude/...` output branch by default, and one created through the API
+attaches every connector too; clear them (`clear_mcp_connections: true`), clear
+the branch, and check `Agent` and `Skill` are allowed. Duplicate runs are safe, since `next-bead.py --claimed`
+settles races, but they spend the daily cap. When attaching a GitHub trigger
+through `RemoteTrigger` `create_webhook_trigger`, the body that validates is
 `{"routine_trigger_id": "trig_...", "source": "github", "hook_type": "app",
 "scope_id": "<owner>/<repo>", "events": ["pull_request.closed"]}`; the filter
-format is undocumented and every shape tried was refused, so the trigger is
-unfiltered and `next-bead.py` sorts out what each run should do. Its saved prompt points at the
+format is undocumented, so the trigger is unfiltered and `next-bead.py`
+decides what each run does. Its saved prompt points at the
 skill and allows acting on exactly one line of fire text, `bead: <bead-id>`.
 
 The cloud environment's setup script is mirrored at `.claude/cloud-setup.sh`

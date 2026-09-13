@@ -4,15 +4,15 @@
 #   fire-routine.sh               run the queue now
 #   fire-routine.sh <bead-id>     start or resume that bead, out of queue order
 #
-# The queue normally starts itself: every merged pull request and a daily
-# schedule run the routine, which picks the next ready spec. Use this when the
+# The queue normally starts itself: every closed pull request and the two
+# 12-hour sweeps start a run, which picks the next ready spec. Use this when the
 # owner asks for a specific bead to be implemented, to retry a needs-human PR
 # after the owner has looked at it, or when a dropped GitHub event has left the
 # queue idle.
 #
 # Naming a bead skips queue order and nothing else: the routine still refuses a
 # bead with no merged spec or with unmerged dependencies, and still starts
-# nothing while a different bead is in flight. The routine's saved prompt acts
+# nothing when two beads are running or the bead shares files with one that is. The routine's saved prompt acts
 # on exactly one line of fire text, "bead: <bead-id>"; fire text otherwise
 # arrives labelled as untrusted and is ignored.
 #

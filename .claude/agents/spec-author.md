@@ -39,8 +39,8 @@ Depends on: <open dependency ids, comma-separated, or none>
 
 **What changes.** <two or three sentences a player would recognise>
 
-**Decisions for you.**
-1. <question> — <options>. **Recommended:** <what this spec does>.
+**Decisions.**
+1. <question> — **Decided:** <the owner's answer>.
 
 **Rule changes.** <quoted new CLAUDE.md text, or None.>
 
@@ -81,19 +81,22 @@ this bead until every bead it names is implemented, so it must be exact:
 ### For the owner
 
 The owner reads this card on a phone, on GitHub, and approves the spec by
-merging it. Merging accepts everything the card recommends. Write the card last,
-once the rules are settled, and keep it short enough to read on a small screen.
+merging it. A spec PR never asks the owner anything: every question is put to
+the owner in chat before the PR opens. Write the card last, once the rules are
+settled, and keep it short enough to read on a small screen.
 
 - **What changes.** Two or three sentences about what players, or the owner,
   will notice. No module names and no Ash terms. For an internal or test-only
   bead, say that in one sentence.
-- **Decisions for you.** Every judgement call a player or the owner would care
-  about: each place the bead was vague and you chose, each Assumption that
-  changes how the game plays, each trade-off with a real alternative. One
-  numbered item each: the question, the options, and the one this spec
-  implements marked **Recommended**. A decision missing here is one the owner
-  makes without knowing. Implementation choices (which module, which Ash
-  construct) do not belong here. Write `None.` when there are none.
+- **Decisions.** Every judgement call a player or the owner would care about:
+  each place the bead was vague, each Assumption that changes how the game
+  plays, each trade-off with a real alternative. Decisions the coordinator
+  passed you from the owner go in as `**Decided:** <answer>`. For a new one you
+  had to make yourself, write it as `**Recommended:** <your choice>` and list it
+  in your reply: the coordinator asks the owner in chat and turns it into
+  `**Decided:**` before the PR opens. A decision missing here is one the owner
+  never saw. Implementation choices (which module, which Ash construct) do not
+  belong here. Write `None.` when there are none.
 - **Rule changes.** Every addition to or change of a settled rule in `CLAUDE.md`
   that the rules imply, quoted as the new text would read. Write `None.` when
   there are none.
@@ -129,8 +132,14 @@ specify the contract.
 
 ### Touches
 
-Advisory. The coder may deviate. Say so in the file so no one treats it as a
-constraint.
+Advisory for the coder, which may deviate. Say so in the file so no one treats
+it as a constraint on the implementation.
+
+The queue does read it strictly. Two beads run at the same time only when their
+Touches sections name no common file under `lib/` or `priv/`, and a Touches that
+names no file at all is treated as touching everything. So list every source
+file the rules will change, by path. A missed file lets two conflicting beads
+run side by side; an extra one only makes a bead wait.
 
 Include the **existing tests a rule will break**, not just the files being
 written. Grep for callers and for assertions that depend on the behaviour a

@@ -108,25 +108,37 @@ fi
 # Spec PRs are where the owner reads and approves, often from a phone. A
 # comment or review newer than the branch's last commit is feedback that
 # nobody has acted on yet.
-if with_timeout "$NET_TIMEOUT" "$TMP/specs" \
-  gh pr list --state open --limit "$PR_LIMIT" \
-  --json number,title,headRefName,comments,reviews,commits; then
-  python3 - "$TMP/specs" <<'PYEOF' 2>/dev/null
-import json
-import sys
-
-prs = [p for p in json.load(open(sys.argv[1])) if p.get("headRefName", "").startswith("spec/")]
-if prs:
-    print("beads sync: spec pull requests waiting on the owner to merge:")
-for pr in sorted(prs, key=lambda p: p["number"]):
-    commits = pr.get("commits") or []
-    pushed = commits[-1].get("committedDate", "") if commits else ""
-    times = [c.get("createdAt", "") for c in pr.get("comments") or []]
-    times += [r.get("submittedAt", "") for r in pr.get("reviews") or []]
-    new = sum(1 for t in times if t and t > pushed)
-    note = "%d new comment(s) since the last push: act on them" % new if new else "no new comments"
-    print("  #%d %s (%s)" % (pr["number"], pr["title"], note))
-PYEOF
+if with_timeout "$NET_TIMEOUT" "$TMP/open" \
+  gh pr list --state open --limit "$PR_LIMIT" --json number,title,headRefName; then
+  specs="$(python3 -c '
+import json, sys
+for pr in json.load(open(sys.argv[1])):
+    if pr.get("headRefName", "").startswith("spec/"):
+        print("%d\t%s" % (pr["number"], pr["title"]))
+' "$TMP/open" 2>/dev/null)"
+  if [ -n "$specs" ]; then
+    echo "beads sync: spec pull requests waiting on the owner to merge:"
+    while IFS=$'\t' read -r number title; do
+      note=""
+      # One PR at a time: asking for comments, reviews and commits across the
+      # whole PR list exceeds GitHub's GraphQL node limit (seen 2026-09-12).
+      if with_timeout "$NET_TIMEOUT" "$TMP/pr" gh pr view "$number" --json comments,reviews,commits; then
+        note="$(python3 -c '
+import json, sys
+pr = json.load(open(sys.argv[1]))
+commits = pr.get("commits") or []
+pushed = commits[-1].get("committedDate", "") if commits else ""
+times = [c.get("createdAt", "") for c in pr.get("comments") or []]
+times += [r.get("submittedAt", "") for r in pr.get("reviews") or []]
+new = sum(1 for t in times if t and t > pushed)
+print("%d new comment(s) since the last push: act on them" % new if new else "no new comments")
+' "$TMP/pr" 2>/dev/null)"
+      fi
+      echo "  #$number $title (${note:-comments could not be read})"
+    done <<<"$specs"
+  fi
+else
+  echo "beads sync: could not list open pull requests ($(head -c 120 "$TMP/open" | tr '\n' ' '))"
 fi
 
 # The queue: what the cloud starts next, and what is waiting on what.

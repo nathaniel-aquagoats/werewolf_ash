@@ -5,8 +5,9 @@ defmodule WerewolfAsh.Games.Game.Changes.DealRoles do
 
   Queues an `after_action` hook (alongside `AdvancePhase`'s own hook that
   opens the first phase) so the roles are dealt once the game row itself has
-  successfully left the lobby. `RoleAssignment.composition/1` computes the
-  counts; which seat gets which role is unspecified beyond that.
+  successfully left the lobby. `RoleAssignment.composition/2` computes the
+  counts, reading the game's own settings; which seat gets which role is
+  unspecified beyond that.
   """
 
   use Ash.Resource.Change
@@ -25,7 +26,7 @@ defmodule WerewolfAsh.Games.Game.Changes.DealRoles do
 
   defp deal(game, opts) do
     players = Games.list_players!(query: [filter: [game_id: game.id]])
-    roles = Enum.shuffle(RoleAssignment.composition(length(players)))
+    roles = Enum.shuffle(RoleAssignment.composition(length(players), game))
 
     players
     |> Enum.zip(roles)

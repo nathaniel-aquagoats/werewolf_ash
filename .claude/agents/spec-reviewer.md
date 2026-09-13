@@ -68,11 +68,14 @@ Work through all seven. For each, say `pass` or give findings.
 7. **The header and the owner card are true.** `Depends on:` names every
    dependency that `bd show` lists as not closed, and nothing else. A missing
    or wrong line either strands the bead or lets it start on top of unmerged
-   work, so it is blocking. **Decisions for you** lists every gameplay-affecting
+   work, so it is blocking. **Decisions** lists every gameplay-affecting
    judgement call and Assumption in the spec, and **Rule changes** quotes every
    change to a settled rule in `CLAUDE.md` that the rules imply. The owner
-   approves by merging, and merging accepts the card, so a gameplay decision or
-   rule change missing from the card is blocking. Wording and length are nits.
+   approves by merging, so a gameplay decision or rule change missing from the
+   card is blocking. List every item still marked **Recommended** in your
+   reply: the coordinator must ask the owner about each before the PR opens. Wording and length are nits.
+   A `lib/` file the rules plainly change but Touches omits is a nit: the queue
+   uses Touches paths to decide which beads may run at the same time.
 
 ## Severity
 

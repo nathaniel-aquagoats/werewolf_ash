@@ -20,7 +20,7 @@ Verified 2026-09-12, and it is not what you would assume:
 
 | Operation | Use |
 |---|---|
-| Reading PRs, branches, repo state | `gh` CLI reads, or `git` — both work |
+| Reading PRs, branches, repo state | `git`, or REST: `gh api repos/<owner>/<repo>/...`. **Never `gh pr list` or `gh pr view`**: they use GitHub GraphQL, which cloud sessions refuse with HTTP 403. `mcp__github__list_pull_requests` also works |
 | `git push` to a branch | works |
 | **Creating, updating, closing or merging a PR** | **`mcp__github__*` tools only** |
 | Adding or removing a label | `mcp__github__update_issue` (labels apply to PRs) |
@@ -37,7 +37,7 @@ them; that is not your problem and not a failure to report.
 ## Where the work comes from
 
 A run starts when any pull request closes (usually a merge into `main`), on
-the daily schedule, or when the maintainer fires the routine by hand. None of those carries the work.
+the 12-hour sweep schedule, or when the maintainer fires the routine by hand. None of those carries the work.
 The work is in the repository:
 
 - **An approved spec** is a file `docs/specs/<bead-id>.md` on `main`. The owner
@@ -67,10 +67,10 @@ Do exactly what its first line says:
 |---|---|---|
 | `next <bead-id>` | this bead may start | step 2 |
 | `continue #<n>` | the named bead's PR is open | step 3 |
-| `paused #<n> …` | a `needs-human` PR is open; the owner has not looked yet | stop |
-| `busy #<n> …` | another bead is in flight | stop |
-| `idle` | nothing is ready | stop |
-| `waiting …`, `implemented …`, `nospec …`, `malformed …` | the named bead cannot start | stop |
+| `paused #<n> …` | a `needs-human` PR is open; nothing new starts until the owner looks | stop |
+| `full #<n>, #<m>` | two beads are already running | stop |
+| `idle` | nothing can start now (not ready, or conflicts with a running bead) | stop |
+| `waiting …`, `implemented …`, `nospec …`, `malformed …`, `conflicts …` | the named bead cannot start | stop |
 | `error …`, or exit 1 | the inputs could not be read | stop |
 
 **A stop is a successful run.** Put the script's output in your final message
@@ -79,8 +79,9 @@ the decision. If it looks wrong, say why in the final message and still stop.
 
 ## 2. Claim a new bead
 
-The open PR is the lock that keeps the queue to one bead at a time, so it is
-opened before any work.
+Up to two beads run at once, each in its own run, and `next-bead.py` only
+offers a bead that shares no source files with the one already running. The
+open PR is this run's claim on a slot, so it is opened before any work.
 
 1. **Branch.** `git fetch origin`. If `origin/bead/<bead-id>` already exists, an
    earlier run left it behind: `git checkout -b bead/<bead-id>
@@ -100,10 +101,12 @@ opened before any work.
    - **Body**: a link to `docs/specs/<bead-id>.md` on `main`, then the line
      "Implementation in progress." Do not paste the spec: it is already on
      `main`, and a large one exceeds GitHub's body limit.
-4. **Check you won.** `gh pr list --state open --json number,headRefName`. If
-   another `bead/*` PR is open with a lower number than yours, two runs
-   started at once and yours lost: close yours with
-   `mcp__github__update_pull_request` (`state: closed`), say so, and stop.
+4. **Check you won.** Two runs can decide at the same moment, so confirm the
+   slot: `python3 .claude/hooks/next-bead.py --claimed <bead-id>`. `won #<n>`
+   means carry on. Anything else — `lost …` because earlier PRs already fill
+   both slots or conflict with this bead, or an error — means close your PR
+   with `mcp__github__update_pull_request` (`state: closed`), say why, and
+   stop.
 5. **Stamp the spec.** Put the line `Implemented in PR #<n>.` directly under the
    spec's first heading, with a blank line on each side, replacing an older
    stamp if the branch already has one. Commit it as `<bead-id>: stamp spec with
@@ -118,7 +121,8 @@ The owner named this bead, which is their say-so to try it again.
 
 Check out the PR's branch. If it carries `needs-human`, remove that label with
 `mcp__github__update_issue`. Read the latest review and comments
-(`gh pr view <n> --comments`) and give them to the coder **verbatim**, together
+(`gh api repos/<owner>/<repo>/pulls/<n>/reviews` and
+`gh api repos/<owner>/<repo>/issues/<n>/comments`; never `gh pr view`) and give them to the coder **verbatim**, together
 with the instruction that it is continuing a branch that must be rebased onto
 the current `main` before anything else.
 
@@ -160,12 +164,20 @@ Stop after that. The paths out are:
 |---|---|
 | Reviewer merges | Done. The squash title carries the bead id. |
 | Second rejection | Label it `needs-human`, leave the PR open, stop. |
-| Rebase conflicts | Same. Do not resolve it. |
-| Coder cannot satisfy the spec | Same, with why, in a PR comment. |
+| Reviewer reports a rebase conflict | Not a rejection, and not the retry (see below). |
+| Coder cannot satisfy the spec | Label it `needs-human`, with why in a PR comment, stop. |
 
-A `needs-human` label pauses the whole queue until the owner looks, which is
-the point: a bead that failed twice often means a spec problem that later beads
-share. If the label does not exist yet, create it first. The maintainer's
+**Rebase conflicts are expected.** Beads run in parallel, so another bead often
+merges while this one is in review. When the reviewer reports `rebase
+conflict`, run the `coder` with the conflicting files and the instruction to
+rebase onto `main`, regenerate generated files, re-run the gates and push —
+changing nothing else — then run the reviewer again. This does not use up the
+retry. After two such hand-backs, or if the coder says the rebase cannot keep
+the spec's intent, label it `needs-human` and stop.
+
+A `needs-human` label stops new beads from starting until the owner looks, which
+is the point: a bead that failed twice often means a spec problem that later
+beads share. A bead already running in another run finishes normally. If the label does not exist yet, create it first. The maintainer's
 session lists labelled PRs at every start, so labelling is how you raise a
 hand. If labelling fails outright, say so loudly in a PR comment instead — an
 unlabelled stuck PR is invisible, and the queue would not pause.
@@ -183,14 +195,15 @@ on wake-up timing you cannot see or control.
 
 Either way the rule that does matter is: **do not finish the run until the
 reviewer has reported.** A run that ends with the PR open and unreviewed has
-failed, however it got there, and it keeps the queue busy. If something is
+failed, however it got there, and it holds one of the queue's two slots. If something is
 genuinely too slow to complete, label the PR `needs-human` and say what timed
 out.
 
 ## After a merge
 
-Do not start another bead in this run. The merge is itself a trigger: a fresh
-run starts on its own and asks `next-bead.py` again.
+Do not start another bead in this run. Each run claims at most one bead. The
+merge is itself a trigger: a fresh run starts on its own, asks `next-bead.py`
+again, and fills the free slot.
 
 ## Rules for you, the orchestrator
 

@@ -57,6 +57,16 @@ WRITE_INTENT = re.compile(
     r"|\bchmod\b|\bdd\b|\bpatch\b|\bapply\b)"
 )
 
+# The write verbs other than a redirect. When a command's only writes are
+# redirects, only the redirect targets are checked: "git show
+# origin/spec/x:docs/specs/x.md > /tmp/old.md" reads a spec and writes /tmp, and
+# refusing it stopped a spec reviewer diffing a revision (2026-09-13).
+OTHER_WRITE = re.compile(
+    r"(\btee\b|\bsed\b[^|;]*\s-i|\bcp\b|\bmv\b|\brm\b|\bln\b|\btruncate\b"
+    r"|\bchmod\b|\bdd\b|\bpatch\b|\bapply\b)"
+)
+REDIRECT_TARGET = re.compile(r"\d*>>?\s*([^\s;|&<>]+)")
+
 REFUSAL = (
     "Blocked: {target} is part of the agent pipeline, a spec, or lint config, "
     "which is out of scope for every bead. Do not edit hooks, agent briefs, "
@@ -102,7 +112,13 @@ def main():
         command = HARMLESS_REDIRECT.sub(" ", tool_input.get("command", ""))
         if not WRITE_INTENT.search(command):
             return 0
-        target = protected_hit(command, patterns)
+        if OTHER_WRITE.search(command):
+            target = protected_hit(command, patterns)
+        else:
+            target = next(
+                (hit for dest in REDIRECT_TARGET.findall(command) if (hit := protected_hit(dest, patterns))),
+                None,
+            )
     else:
         target = protected_hit(tool_input.get("file_path", ""), patterns)
 

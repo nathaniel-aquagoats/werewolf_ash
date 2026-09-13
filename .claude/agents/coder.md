@@ -25,6 +25,11 @@ changed. For `priv/resource_snapshots`, take `main`'s side and re-run
 `mix ash.codegen`. Then run the gates. If a conflict can't be resolved without
 changing what the spec asks for, stop and say so; the PR goes to `needs-human`.
 
+**A rebase hand-back is its own, smaller task.** When the orchestrator sends
+the branch back because the reviewer's rebase conflicted (another bead merged
+first), rebase onto `origin/main` as above, regenerate, run the gates and push.
+Change nothing else: there are no findings to address.
+
 ## The spec is the boundary
 
 Implement every numbered rule. Implement nothing else.
