@@ -20,7 +20,10 @@ defmodule WerewolfAsh.Games.Message do
   use Ash.Resource,
     otp_app: :werewolf_ash,
     domain: WerewolfAsh.Games,
-    data_layer: AshPostgres.DataLayer
+    data_layer: AshPostgres.DataLayer,
+    authorizers: [Ash.Policy.Authorizer]
+
+  alias WerewolfAsh.Games.Message.Visibility
 
   postgres do
     table "messages"
@@ -57,6 +60,22 @@ defmodule WerewolfAsh.Games.Message do
 
       prepare WerewolfAsh.Games.Message.Preparations.VisibleTo
       prepare build(sort: [inserted_at: :asc])
+    end
+  end
+
+  policies do
+    # rule 10 - every read action (the bare :read default and :visible_to
+    # alike) is filtered to what the calling actor's own player seat may
+    # read; reused unchanged from the visible_to action's own filter, so a
+    # caller can never see more than their own actor identity permits
+    # regardless of what player_id argument they pass.
+    policy action_type(:read) do
+      authorize_if Visibility.visible_to(expr(user_id == ^actor(:id)))
+    end
+
+    # rule 11 - a message's author_id must name the caller's own seat.
+    policy action(:send_message) do
+      authorize_if expr(author.user_id == ^actor(:id))
     end
   end
 

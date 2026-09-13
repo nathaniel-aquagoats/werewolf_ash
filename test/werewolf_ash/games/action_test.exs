@@ -22,7 +22,7 @@ defmodule WerewolfAsh.Games.ActionTest do
     game = Games.start_game!(game, %{now: @start}, actor: owner)
 
     players =
-      Games.list_players!(query: [filter: [game_id: game.id]])
+      Games.list_players!(query: [filter: [game_id: game.id]], authorize?: false)
       |> Map.new(&{&1.role, &1})
 
     assert map_size(players) == 5
@@ -31,8 +31,15 @@ defmodule WerewolfAsh.Games.ActionTest do
   end
 
   defp current_phase(game) do
-    Games.get_game!(game.id, load: :current_phase).current_phase
+    Games.get_game!(game.id, load: :current_phase, authorize?: false).current_phase
   end
+
+  # rule 7 - every Action create/kill call in this file submits as the
+  # acting player's own seat; `%{id: player.user_id}` is enough of an actor
+  # to satisfy the policy (the same shape games_test.exs's own
+  # `update_settings!/2` helper already uses for `ActorIsOwner`), without a
+  # real `User` fetch.
+  defp actor_for(player), do: %{id: player.user_id}
 
   defp force_state(game, state) do
     game
@@ -49,12 +56,15 @@ defmodule WerewolfAsh.Games.ActionTest do
     test "a living player's day vote succeeds and is readable back", %{game: game, players: p} do
       day = current_phase(game)
 
-      action = Games.create_action!(day.id, p.villager.id, p.werewolf.id, :vote)
+      action =
+        Games.create_action!(day.id, p.villager.id, p.werewolf.id, :vote,
+          actor: actor_for(p.villager)
+        )
 
       assert action.type == :vote
-      assert Games.get_action!(action.id).id == action.id
+      assert Games.get_action!(action.id, authorize?: false).id == action.id
 
-      assert Games.list_actions!(query: [filter: [phase_id: day.id]])
+      assert Games.list_actions!(query: [filter: [phase_id: day.id]], authorize?: false)
              |> Enum.any?(&(&1.id == action.id))
     end
 
@@ -65,7 +75,10 @@ defmodule WerewolfAsh.Games.ActionTest do
       game = Games.end_day!(game, %{now: @dusk})
       night = current_phase(game)
 
-      action = Games.create_action!(night.id, p.seer.id, p.werewolf.id, :investigate)
+      action =
+        Games.create_action!(night.id, p.seer.id, p.werewolf.id, :investigate,
+          actor: actor_for(p.seer)
+        )
 
       assert action.result == %{"is_werewolf" => true}
     end
@@ -73,7 +86,10 @@ defmodule WerewolfAsh.Games.ActionTest do
     test "the bodyguard's day protection succeeds", %{game: game, players: p} do
       day = current_phase(game)
 
-      action = Games.create_action!(day.id, p.bodyguard.id, p.villager.id, :protect)
+      action =
+        Games.create_action!(day.id, p.bodyguard.id, p.villager.id, :protect,
+          actor: actor_for(p.bodyguard)
+        )
 
       assert action.type == :protect
     end
@@ -83,7 +99,10 @@ defmodule WerewolfAsh.Games.ActionTest do
       game = force_state(game, :hunter_pending)
       day = current_phase(game)
 
-      action = Games.create_action!(day.id, p.hunter.id, p.villager.id, :shoot)
+      action =
+        Games.create_action!(day.id, p.hunter.id, p.villager.id, :shoot,
+          actor: actor_for(p.hunter)
+        )
 
       assert action.type == :shoot
     end
@@ -101,16 +120,22 @@ defmodule WerewolfAsh.Games.ActionTest do
       Games.update_player!(p.bodyguard, %{alive: false})
 
       assert {:error, %Ash.Error.Invalid{errors: [%{field: :actor_id}]}} =
-               Games.create_action(day.id, p.villager.id, p.werewolf.id, :vote)
+               Games.create_action(day.id, p.villager.id, p.werewolf.id, :vote,
+                 actor: actor_for(p.villager)
+               )
 
       assert {:error, %Ash.Error.Invalid{errors: [%{field: :actor_id}]}} =
-               Games.create_action(night.id, p.seer.id, p.werewolf.id, :investigate)
+               Games.create_action(night.id, p.seer.id, p.werewolf.id, :investigate,
+                 actor: actor_for(p.seer)
+               )
 
       assert {:error, %Ash.Error.Invalid{errors: [%{field: :actor_id}]}} =
-               Games.create_action(day.id, p.bodyguard.id, p.werewolf.id, :protect)
+               Games.create_action(day.id, p.bodyguard.id, p.werewolf.id, :protect,
+                 actor: actor_for(p.bodyguard)
+               )
 
-      assert Games.list_actions!(query: [filter: [phase_id: day.id]]) == []
-      assert Games.list_actions!(query: [filter: [phase_id: night.id]]) == []
+      assert Games.list_actions!(query: [filter: [phase_id: day.id]], authorize?: false) == []
+      assert Games.list_actions!(query: [filter: [phase_id: night.id]], authorize?: false) == []
     end
 
     test "rejects a dead target for a vote, investigation or protection (werewolf_ash-qss.18 rule 1)",
@@ -122,16 +147,22 @@ defmodule WerewolfAsh.Games.ActionTest do
       Games.update_player!(p.hunter, %{alive: false})
 
       assert {:error, %Ash.Error.Invalid{errors: [%{field: :target_id}]}} =
-               Games.create_action(day.id, p.villager.id, p.hunter.id, :vote)
+               Games.create_action(day.id, p.villager.id, p.hunter.id, :vote,
+                 actor: actor_for(p.villager)
+               )
 
       assert {:error, %Ash.Error.Invalid{errors: [%{field: :target_id}]}} =
-               Games.create_action(night.id, p.seer.id, p.hunter.id, :investigate)
+               Games.create_action(night.id, p.seer.id, p.hunter.id, :investigate,
+                 actor: actor_for(p.seer)
+               )
 
       assert {:error, %Ash.Error.Invalid{errors: [%{field: :target_id}]}} =
-               Games.create_action(day.id, p.bodyguard.id, p.hunter.id, :protect)
+               Games.create_action(day.id, p.bodyguard.id, p.hunter.id, :protect,
+                 actor: actor_for(p.bodyguard)
+               )
 
-      assert Games.list_actions!(query: [filter: [phase_id: day.id]]) == []
-      assert Games.list_actions!(query: [filter: [phase_id: night.id]]) == []
+      assert Games.list_actions!(query: [filter: [phase_id: day.id]], authorize?: false) == []
+      assert Games.list_actions!(query: [filter: [phase_id: night.id]], authorize?: false) == []
     end
 
     test "rejects a cross-game actor or target (werewolf_ash-qss.18 rules 2, 3)", %{
@@ -143,28 +174,39 @@ defmodule WerewolfAsh.Games.ActionTest do
       outsider = generate(player(game_id: other_game.id))
 
       assert {:error, %Ash.Error.Invalid{errors: [%{field: :actor_id}]}} =
-               Games.create_action(day.id, outsider.id, p.werewolf.id, :vote)
+               Games.create_action(day.id, outsider.id, p.werewolf.id, :vote,
+                 actor: actor_for(outsider)
+               )
 
       assert {:error, %Ash.Error.Invalid{errors: [%{field: :target_id}]}} =
-               Games.create_action(day.id, p.villager.id, outsider.id, :vote)
+               Games.create_action(day.id, p.villager.id, outsider.id, :vote,
+                 actor: actor_for(p.villager)
+               )
 
-      assert Games.list_actions!(query: [filter: [phase_id: day.id]]) == []
+      assert Games.list_actions!(query: [filter: [phase_id: day.id]], authorize?: false) == []
     end
 
     test "rejects consecutive-day protection of the same player, but allows a different target (werewolf_ash-qss.18 rule 4)",
          %{game: game, players: p} do
       day1 = current_phase(game)
-      Games.create_action!(day1.id, p.bodyguard.id, p.villager.id, :protect)
+
+      Games.create_action!(day1.id, p.bodyguard.id, p.villager.id, :protect,
+        actor: actor_for(p.bodyguard)
+      )
 
       game = Games.end_day!(game, %{now: @dusk})
       game = Games.end_night!(game, %{now: @dawn})
       day2 = current_phase(game)
 
       assert {:error, %Ash.Error.Invalid{errors: [%{field: :target_id}]}} =
-               Games.create_action(day2.id, p.bodyguard.id, p.villager.id, :protect)
+               Games.create_action(day2.id, p.bodyguard.id, p.villager.id, :protect,
+                 actor: actor_for(p.bodyguard)
+               )
 
       assert %{type: :protect} =
-               Games.create_action!(day2.id, p.bodyguard.id, p.seer.id, :protect)
+               Games.create_action!(day2.id, p.bodyguard.id, p.seer.id, :protect,
+                 actor: actor_for(p.bodyguard)
+               )
     end
 
     test "rejects a :vote outside a day phase (rule 2)", %{game: game, players: p} do
@@ -172,9 +214,11 @@ defmodule WerewolfAsh.Games.ActionTest do
       night = current_phase(game)
 
       assert {:error, %Ash.Error.Invalid{errors: [%{field: :type}]}} =
-               Games.create_action(night.id, p.villager.id, p.werewolf.id, :vote)
+               Games.create_action(night.id, p.villager.id, p.werewolf.id, :vote,
+                 actor: actor_for(p.villager)
+               )
 
-      assert Games.list_actions!(query: [filter: [phase_id: night.id]]) == []
+      assert Games.list_actions!(query: [filter: [phase_id: night.id]], authorize?: false) == []
     end
 
     test "rejects :investigate outside a night phase, or by a non-seer (rule 4)", %{
@@ -185,10 +229,14 @@ defmodule WerewolfAsh.Games.ActionTest do
       night = current_phase(Games.end_day!(game, %{now: @dusk}))
 
       assert {:error, %Ash.Error.Invalid{errors: [%{field: :type}]}} =
-               Games.create_action(day.id, p.seer.id, p.werewolf.id, :investigate)
+               Games.create_action(day.id, p.seer.id, p.werewolf.id, :investigate,
+                 actor: actor_for(p.seer)
+               )
 
       assert {:error, %Ash.Error.Invalid{errors: [%{field: :type}]}} =
-               Games.create_action(night.id, p.villager.id, p.werewolf.id, :investigate)
+               Games.create_action(night.id, p.villager.id, p.werewolf.id, :investigate,
+                 actor: actor_for(p.villager)
+               )
     end
 
     test "rejects :protect outside a day phase, or by a non-bodyguard (rule 5)", %{
@@ -199,17 +247,23 @@ defmodule WerewolfAsh.Games.ActionTest do
       night = current_phase(Games.end_day!(game, %{now: @dusk}))
 
       assert {:error, %Ash.Error.Invalid{errors: [%{field: :type}]}} =
-               Games.create_action(night.id, p.bodyguard.id, p.villager.id, :protect)
+               Games.create_action(night.id, p.bodyguard.id, p.villager.id, :protect,
+                 actor: actor_for(p.bodyguard)
+               )
 
       assert {:error, %Ash.Error.Invalid{errors: [%{field: :type}]}} =
-               Games.create_action(day.id, p.villager.id, p.werewolf.id, :protect)
+               Games.create_action(day.id, p.villager.id, p.werewolf.id, :protect,
+                 actor: actor_for(p.villager)
+               )
     end
 
     test "rejects a bodyguard protecting themselves (rule 6)", %{game: game, players: p} do
       day = current_phase(game)
 
       assert {:error, %Ash.Error.Invalid{errors: [%{field: :target_id}]}} =
-               Games.create_action(day.id, p.bodyguard.id, p.bodyguard.id, :protect)
+               Games.create_action(day.id, p.bodyguard.id, p.bodyguard.id, :protect,
+                 actor: actor_for(p.bodyguard)
+               )
     end
 
     test "rejects a shot from anyone but the pending hunter (rule 7)", %{game: game, players: p} do
@@ -217,7 +271,9 @@ defmodule WerewolfAsh.Games.ActionTest do
       day = current_phase(game)
 
       assert {:error, %Ash.Error.Invalid{errors: [%{field: :actor_id}]}} =
-               Games.create_action(day.id, p.villager.id, p.werewolf.id, :shoot)
+               Games.create_action(day.id, p.villager.id, p.werewolf.id, :shoot,
+                 actor: actor_for(p.villager)
+               )
     end
 
     test "refuses a second action of the same type in the same phase (rule 9)", %{
@@ -225,12 +281,18 @@ defmodule WerewolfAsh.Games.ActionTest do
       players: p
     } do
       day = current_phase(game)
-      first = Games.create_action!(day.id, p.villager.id, p.werewolf.id, :vote)
+
+      first =
+        Games.create_action!(day.id, p.villager.id, p.werewolf.id, :vote,
+          actor: actor_for(p.villager)
+        )
 
       assert {:error, %Ash.Error.Invalid{errors: [%{field: :phase_id}]}} =
-               Games.create_action(day.id, p.villager.id, p.bodyguard.id, :vote)
+               Games.create_action(day.id, p.villager.id, p.bodyguard.id, :vote,
+                 actor: actor_for(p.villager)
+               )
 
-      unchanged = Games.get_action!(first.id)
+      unchanged = Games.get_action!(first.id, authorize?: false)
       assert unchanged.target_id == first.target_id
       assert unchanged.result == first.result
     end
@@ -238,27 +300,40 @@ defmodule WerewolfAsh.Games.ActionTest do
     test "a different type in the same phase, or the same type in a later phase, still succeeds",
          %{game: game, players: p} do
       day = current_phase(game)
-      Games.create_action!(day.id, p.villager.id, p.werewolf.id, :vote)
+
+      Games.create_action!(day.id, p.villager.id, p.werewolf.id, :vote,
+        actor: actor_for(p.villager)
+      )
+
       # A second, opposing vote (werewolf_ash-qss.5 rules 2, 3) ties the day
       # so this test's own single werewolf survives `end_day!` below; the
       # rule's own behaviour is covered in resolve_lynch_test.exs.
-      Games.create_action!(day.id, p.werewolf.id, p.villager.id, :vote)
+      Games.create_action!(day.id, p.werewolf.id, p.villager.id, :vote,
+        actor: actor_for(p.werewolf)
+      )
 
       assert %{type: :protect} =
-               Games.create_action!(day.id, p.bodyguard.id, p.villager.id, :protect)
+               Games.create_action!(day.id, p.bodyguard.id, p.villager.id, :protect,
+                 actor: actor_for(p.bodyguard)
+               )
 
       game = Games.end_day!(game, %{now: @dusk})
       game = Games.end_night!(game, %{now: @dawn})
       day2 = current_phase(game)
 
-      assert %{type: :vote} = Games.create_action!(day2.id, p.villager.id, p.werewolf.id, :vote)
+      assert %{type: :vote} =
+               Games.create_action!(day2.id, p.villager.id, p.werewolf.id, :vote,
+                 actor: actor_for(p.villager)
+               )
     end
 
     test "rejects type: :kill outright (rule 12)", %{game: game, players: p} do
       day = current_phase(game)
 
       assert {:error, %Ash.Error.Invalid{errors: [%{field: :type}]}} =
-               Games.create_action(day.id, p.werewolf.id, p.villager.id, :kill)
+               Games.create_action(day.id, p.werewolf.id, p.villager.id, :kill,
+                 actor: actor_for(p.werewolf)
+               )
     end
   end
 
@@ -272,11 +347,14 @@ defmodule WerewolfAsh.Games.ActionTest do
     end
 
     test "a living werewolf's kill lands immediately", %{players: p, night: night} do
-      action = Games.create_kill_action!(night.id, p.werewolf.id, p.villager.id)
+      action =
+        Games.create_kill_action!(night.id, p.werewolf.id, p.villager.id,
+          actor: actor_for(p.werewolf)
+        )
 
       assert action.type == :kill
       assert action.result == %{"killed" => true}
-      assert Games.get_player!(p.villager.id).alive == false
+      assert Games.get_player!(p.villager.id, authorize?: false).alive == false
     end
 
     test "rejects a dead actor, a non-werewolf actor, and a day-phase attempt (rules 1, 3)", %{
@@ -285,17 +363,23 @@ defmodule WerewolfAsh.Games.ActionTest do
       night: night
     } do
       assert {:error, %Ash.Error.Invalid{errors: [%{field: :type}]}} =
-               Games.create_kill_action(night.id, p.villager.id, p.bodyguard.id)
+               Games.create_kill_action(night.id, p.villager.id, p.bodyguard.id,
+                 actor: actor_for(p.villager)
+               )
 
       assert {:error, %Ash.Error.Invalid{errors: [%{field: :type}]}} =
-               Games.create_kill_action(day.id, p.werewolf.id, p.villager.id)
+               Games.create_kill_action(day.id, p.werewolf.id, p.villager.id,
+                 actor: actor_for(p.werewolf)
+               )
 
       Games.update_player!(p.werewolf, %{alive: false})
 
       assert {:error, %Ash.Error.Invalid{errors: [%{field: :actor_id}]}} =
-               Games.create_kill_action(night.id, p.werewolf.id, p.villager.id)
+               Games.create_kill_action(night.id, p.werewolf.id, p.villager.id,
+                 actor: actor_for(p.werewolf)
+               )
 
-      assert Games.list_actions!(query: [filter: [phase_id: night.id]]) == []
+      assert Games.list_actions!(query: [filter: [phase_id: night.id]], authorize?: false) == []
     end
 
     test "a protected target survives; the kill is spent", %{
@@ -303,21 +387,28 @@ defmodule WerewolfAsh.Games.ActionTest do
       day: day,
       night: night
     } do
-      Games.create_action!(day.id, p.bodyguard.id, p.villager.id, :protect)
+      Games.create_action!(day.id, p.bodyguard.id, p.villager.id, :protect,
+        actor: actor_for(p.bodyguard)
+      )
 
-      action = Games.create_kill_action!(night.id, p.werewolf.id, p.villager.id)
+      action =
+        Games.create_kill_action!(night.id, p.werewolf.id, p.villager.id,
+          actor: actor_for(p.werewolf)
+        )
 
       assert action.result == %{"killed" => false}
-      assert Games.get_player!(p.villager.id).alive == true
+      assert Games.get_player!(p.villager.id, authorize?: false).alive == true
     end
 
     test "rejects a dead target (werewolf_ash-qss.18 rule 1)", %{players: p, night: night} do
       Games.update_player!(p.villager, %{alive: false})
 
       assert {:error, %Ash.Error.Invalid{errors: [%{field: :target_id}]}} =
-               Games.create_kill_action(night.id, p.werewolf.id, p.villager.id)
+               Games.create_kill_action(night.id, p.werewolf.id, p.villager.id,
+                 actor: actor_for(p.werewolf)
+               )
 
-      assert Games.list_actions!(query: [filter: [phase_id: night.id]]) == []
+      assert Games.list_actions!(query: [filter: [phase_id: night.id]], authorize?: false) == []
     end
 
     test "rejects a cross-game actor and target (werewolf_ash-qss.18 rules 2, 3)", %{
@@ -329,12 +420,16 @@ defmodule WerewolfAsh.Games.ActionTest do
       outsider = generate(player(game_id: other_game.id))
 
       assert {:error, %Ash.Error.Invalid{errors: [%{field: :actor_id}]}} =
-               Games.create_kill_action(night.id, outsider_wolf.id, p.villager.id)
+               Games.create_kill_action(night.id, outsider_wolf.id, p.villager.id,
+                 actor: actor_for(outsider_wolf)
+               )
 
       assert {:error, %Ash.Error.Invalid{errors: [%{field: :target_id}]}} =
-               Games.create_kill_action(night.id, p.werewolf.id, outsider.id)
+               Games.create_kill_action(night.id, p.werewolf.id, outsider.id,
+                 actor: actor_for(p.werewolf)
+               )
 
-      assert Games.list_actions!(query: [filter: [phase_id: night.id]]) == []
+      assert Games.list_actions!(query: [filter: [phase_id: night.id]], authorize?: false) == []
     end
 
     test "a dead-target kill is refused without spending the phase's one kill (rule 1 consequence)",
@@ -342,12 +437,17 @@ defmodule WerewolfAsh.Games.ActionTest do
       Games.update_player!(p.villager, %{alive: false})
 
       assert {:error, %Ash.Error.Invalid{errors: [%{field: :target_id}]}} =
-               Games.create_kill_action(night.id, p.werewolf.id, p.villager.id)
+               Games.create_kill_action(night.id, p.werewolf.id, p.villager.id,
+                 actor: actor_for(p.werewolf)
+               )
 
-      action = Games.create_kill_action!(night.id, p.werewolf.id, p.bodyguard.id)
+      action =
+        Games.create_kill_action!(night.id, p.werewolf.id, p.bodyguard.id,
+          actor: actor_for(p.werewolf)
+        )
 
       assert action.result == %{"killed" => true}
-      assert Games.get_player!(p.bodyguard.id).alive == false
+      assert Games.get_player!(p.bodyguard.id, authorize?: false).alive == false
     end
 
     test "a second kill for the same phase always fails (rule 11)", %{
@@ -355,20 +455,28 @@ defmodule WerewolfAsh.Games.ActionTest do
       players: p,
       night: night
     } do
-      first = Games.create_kill_action!(night.id, p.werewolf.id, p.villager.id)
+      first =
+        Games.create_kill_action!(night.id, p.werewolf.id, p.villager.id,
+          actor: actor_for(p.werewolf)
+        )
+
       other_wolf = generate(player(game_id: game.id, role: :werewolf))
 
       assert {:error, %Ash.Error.Invalid{errors: [%{field: :phase_id}]}} =
-               Games.create_kill_action(night.id, other_wolf.id, p.bodyguard.id)
+               Games.create_kill_action(night.id, other_wolf.id, p.bodyguard.id,
+                 actor: actor_for(other_wolf)
+               )
 
       assert {:error, %Ash.Error.Invalid{errors: [%{field: :phase_id}]}} =
-               Games.create_kill_action(night.id, p.werewolf.id, p.bodyguard.id)
+               Games.create_kill_action(night.id, p.werewolf.id, p.bodyguard.id,
+                 actor: actor_for(p.werewolf)
+               )
 
-      unchanged = Games.get_action!(first.id)
+      unchanged = Games.get_action!(first.id, authorize?: false)
       assert unchanged.target_id == first.target_id
       assert unchanged.result == first.result
-      assert Games.get_player!(p.villager.id).alive == false
-      assert Games.get_player!(p.bodyguard.id).alive == true
+      assert Games.get_player!(p.villager.id, authorize?: false).alive == false
+      assert Games.get_player!(p.bodyguard.id, authorize?: false).alive == true
     end
 
     test "the database refuses a second kill row even bypassing the application", %{
@@ -376,7 +484,10 @@ defmodule WerewolfAsh.Games.ActionTest do
       players: p,
       night: night
     } do
-      Games.create_kill_action!(night.id, p.werewolf.id, p.villager.id)
+      Games.create_kill_action!(night.id, p.werewolf.id, p.villager.id,
+        actor: actor_for(p.werewolf)
+      )
+
       other_wolf = generate(player(game_id: game.id, role: :werewolf))
 
       assert_raise Ash.Error.Invalid, fn ->
@@ -397,40 +508,51 @@ defmodule WerewolfAsh.Games.ActionTest do
       Games.update_player!(p.bodyguard, %{alive: false})
       Games.update_player!(p.hunter, %{alive: false})
 
-      action = Games.create_kill_action!(night.id, p.werewolf.id, p.villager.id)
+      action =
+        Games.create_kill_action!(night.id, p.werewolf.id, p.villager.id,
+          actor: actor_for(p.werewolf)
+        )
 
       assert action.result == %{"killed" => true}
 
-      reloaded = Games.get_game!(night.game_id)
+      reloaded = Games.get_game!(night.game_id, authorize?: false)
       assert reloaded.state == :finished
       assert reloaded.winner == :wolves
     end
 
     test "a landed kill that does not reach parity leaves the game in :night with no winner (werewolf_ash-qss.6 rule 4)",
          %{players: p, night: night} do
-      action = Games.create_kill_action!(night.id, p.werewolf.id, p.villager.id)
+      action =
+        Games.create_kill_action!(night.id, p.werewolf.id, p.villager.id,
+          actor: actor_for(p.werewolf)
+        )
 
       assert action.result == %{"killed" => true}
 
-      reloaded = Games.get_game!(night.game_id)
+      reloaded = Games.get_game!(night.game_id, authorize?: false)
       assert reloaded.state == :night
       assert is_nil(reloaded.winner)
     end
 
     test "a landed, non-decisive kill on the dealt hunter is a plain death (werewolf_ash-qss.6 rule 5)",
          %{players: p, night: night} do
-      action = Games.create_kill_action!(night.id, p.werewolf.id, p.hunter.id)
+      action =
+        Games.create_kill_action!(night.id, p.werewolf.id, p.hunter.id,
+          actor: actor_for(p.werewolf)
+        )
 
       assert action.result == %{"killed" => true}
-      assert Games.get_player!(p.hunter.id).alive == false
+      assert Games.get_player!(p.hunter.id, authorize?: false).alive == false
 
-      reloaded = Games.get_game!(night.game_id)
+      reloaded = Games.get_game!(night.game_id, authorize?: false)
       assert reloaded.state == :night
     end
 
     test "a spent (protected) kill runs no win check even at exact wolf parity going in (werewolf_ash-qss.6 rule 2)",
          %{players: p, day: day, night: night} do
-      Games.create_action!(day.id, p.bodyguard.id, p.villager.id, :protect)
+      Games.create_action!(day.id, p.bodyguard.id, p.villager.id, :protect,
+        actor: actor_for(p.bodyguard)
+      )
 
       # Kill everyone but the (protected) target directly, so the living
       # counts going into this kill already sit at exact wolf parity: a
@@ -440,12 +562,15 @@ defmodule WerewolfAsh.Games.ActionTest do
       Games.update_player!(p.hunter, %{alive: false})
       Games.update_player!(p.bodyguard, %{alive: false})
 
-      action = Games.create_kill_action!(night.id, p.werewolf.id, p.villager.id)
+      action =
+        Games.create_kill_action!(night.id, p.werewolf.id, p.villager.id,
+          actor: actor_for(p.werewolf)
+        )
 
       assert action.result == %{"killed" => false}
-      assert Games.get_player!(p.villager.id).alive == true
+      assert Games.get_player!(p.villager.id, authorize?: false).alive == true
 
-      reloaded = Games.get_game!(night.game_id)
+      reloaded = Games.get_game!(night.game_id, authorize?: false)
       assert reloaded.state == :night
       assert is_nil(reloaded.winner)
     end
@@ -462,18 +587,24 @@ defmodule WerewolfAsh.Games.ActionTest do
 
     test "a night containing a landed, non-decisive kill transitions cleanly to :day, untouched by the transition (rule 6)",
          %{game: game, players: p, night: night} do
-      Games.create_kill_action!(night.id, p.werewolf.id, p.villager.id)
+      Games.create_kill_action!(night.id, p.werewolf.id, p.villager.id,
+        actor: actor_for(p.werewolf)
+      )
 
-      actions_before = Games.list_actions!(query: [filter: [phase_id: night.id]])
+      actions_before =
+        Games.list_actions!(query: [filter: [phase_id: night.id]], authorize?: false)
+
       kill_count_before = Enum.count(actions_before, &(&1.type == :kill))
 
       game = Games.end_night!(game, %{now: @dawn})
 
-      actions_after = Games.list_actions!(query: [filter: [phase_id: night.id]])
+      actions_after =
+        Games.list_actions!(query: [filter: [phase_id: night.id]], authorize?: false)
+
       kill_count_after = Enum.count(actions_after, &(&1.type == :kill))
 
       assert game.state == :day
-      assert Games.get_player!(p.villager.id).alive == false
+      assert Games.get_player!(p.villager.id, authorize?: false).alive == false
       assert length(actions_after) == length(actions_before)
       assert kill_count_after == kill_count_before
 
@@ -510,61 +641,94 @@ defmodule WerewolfAsh.Games.ActionTest do
       %{game: game, players: p} = started_game()
       day1 = current_phase(game)
 
-      Games.create_action!(day1.id, p.bodyguard.id, p.villager.id, :protect)
+      Games.create_action!(day1.id, p.bodyguard.id, p.villager.id, :protect,
+        actor: actor_for(p.bodyguard)
+      )
 
       game = Games.end_day!(game, %{now: @dusk})
       game = Games.end_night!(game, %{now: @dawn})
       day2 = current_phase(game)
 
       assert {:error, %Ash.Error.Invalid{errors: [%{field: :target_id}]}} =
-               Games.create_action(day2.id, p.bodyguard.id, p.villager.id, :protect)
+               Games.create_action(day2.id, p.bodyguard.id, p.villager.id, :protect,
+                 actor: actor_for(p.bodyguard)
+               )
 
       assert %{type: :protect} =
-               Games.create_action!(day2.id, p.bodyguard.id, p.seer.id, :protect)
+               Games.create_action!(day2.id, p.bodyguard.id, p.seer.id, :protect,
+                 actor: actor_for(p.bodyguard)
+               )
 
       game = Games.end_day!(game, %{now: ~U[2026-06-16 20:00:00Z]})
       game = Games.end_night!(game, %{now: ~U[2026-06-17 08:00:00Z]})
       day3 = current_phase(game)
 
       assert %{type: :protect} =
-               Games.create_action!(day3.id, p.bodyguard.id, p.villager.id, :protect)
+               Games.create_action!(day3.id, p.bodyguard.id, p.villager.id, :protect,
+                 actor: actor_for(p.bodyguard)
+               )
     end
 
     test "day/night path: bodyguard protects, a vote lands, a kill lands, the seer investigates" do
       %{game: game, players: p} = started_game()
       day = current_phase(game)
 
-      Games.create_action!(day.id, p.bodyguard.id, p.villager.id, :protect)
-      Games.create_action!(day.id, p.villager.id, p.werewolf.id, :vote)
+      Games.create_action!(day.id, p.bodyguard.id, p.villager.id, :protect,
+        actor: actor_for(p.bodyguard)
+      )
+
+      Games.create_action!(day.id, p.villager.id, p.werewolf.id, :vote,
+        actor: actor_for(p.villager)
+      )
+
       # A second, opposing vote (werewolf_ash-qss.5 rules 2, 3) ties the day
       # so this test's own single werewolf survives `end_day!` below; the
       # rule's own behaviour is covered in resolve_lynch_test.exs.
-      Games.create_action!(day.id, p.werewolf.id, p.villager.id, :vote)
+      Games.create_action!(day.id, p.werewolf.id, p.villager.id, :vote,
+        actor: actor_for(p.werewolf)
+      )
 
       game = Games.end_day!(game, %{now: @dusk})
       night = current_phase(game)
 
       assert {:error, %Ash.Error.Invalid{errors: [%{field: :type}]}} =
-               Games.create_action(night.id, p.villager.id, p.werewolf.id, :vote)
+               Games.create_action(night.id, p.villager.id, p.werewolf.id, :vote,
+                 actor: actor_for(p.villager)
+               )
 
       target = p.hunter
-      kill = Games.create_kill_action!(night.id, p.werewolf.id, target.id)
+
+      kill =
+        Games.create_kill_action!(night.id, p.werewolf.id, target.id,
+          actor: actor_for(p.werewolf)
+        )
 
       assert kill.result == %{"killed" => true}
-      assert Games.get_player!(target.id).alive == false
+      assert Games.get_player!(target.id, authorize?: false).alive == false
 
-      seer_action = Games.create_action!(night.id, p.seer.id, p.werewolf.id, :investigate)
+      seer_action =
+        Games.create_action!(night.id, p.seer.id, p.werewolf.id, :investigate,
+          actor: actor_for(p.seer)
+        )
+
       assert seer_action.result == %{"is_werewolf" => true}
 
       assert {:error, %Ash.Error.Invalid{errors: [%{field: :type}]}} =
-               Games.create_kill_action(night.id, p.villager.id, p.bodyguard.id)
+               Games.create_kill_action(night.id, p.villager.id, p.bodyguard.id,
+                 actor: actor_for(p.villager)
+               )
 
       assert {:error, %Ash.Error.Invalid{errors: [%{field: :phase_id}]}} =
-               Games.create_kill_action(night.id, p.werewolf.id, p.bodyguard.id)
+               Games.create_kill_action(night.id, p.werewolf.id, p.bodyguard.id,
+                 actor: actor_for(p.werewolf)
+               )
 
-      assert Games.get_player!(target.id).alive == false
+      assert Games.get_player!(target.id, authorize?: false).alive == false
 
-      assert Games.list_actions!(query: [filter: [phase_id: night.id, type: :kill]])
+      assert Games.list_actions!(
+               query: [filter: [phase_id: night.id, type: :kill]],
+               authorize?: false
+             )
              |> length() == 1
     end
 
@@ -572,44 +736,68 @@ defmodule WerewolfAsh.Games.ActionTest do
       %{game: game, players: p} = started_game()
       day = current_phase(game)
 
-      Games.create_action!(day.id, p.bodyguard.id, p.villager.id, :protect)
+      Games.create_action!(day.id, p.bodyguard.id, p.villager.id, :protect,
+        actor: actor_for(p.bodyguard)
+      )
 
       game = Games.end_day!(game, %{now: @dusk})
       night = current_phase(game)
 
-      kill = Games.create_kill_action!(night.id, p.werewolf.id, p.villager.id)
+      kill =
+        Games.create_kill_action!(night.id, p.werewolf.id, p.villager.id,
+          actor: actor_for(p.werewolf)
+        )
 
       assert kill.result == %{"killed" => false}
-      assert Games.get_player!(p.villager.id).alive == true
+      assert Games.get_player!(p.villager.id, authorize?: false).alive == true
     end
 
     test "two day/night cycles: bodyguard protects, a kill lands, the seer investigates a wolf and then a non-wolf (werewolf_ash-qss.6 rules 1, 4, 6, 8, 11)" do
       %{game: game, players: p} = started_game()
       day1 = current_phase(game)
 
-      protect1 = Games.create_action!(day1.id, p.bodyguard.id, p.hunter.id, :protect)
+      protect1 =
+        Games.create_action!(day1.id, p.bodyguard.id, p.hunter.id, :protect,
+          actor: actor_for(p.bodyguard)
+        )
 
       game = Games.end_day!(game, %{now: @dusk})
       night1 = current_phase(game)
 
-      kill = Games.create_kill_action!(night1.id, p.werewolf.id, p.villager.id)
+      kill =
+        Games.create_kill_action!(night1.id, p.werewolf.id, p.villager.id,
+          actor: actor_for(p.werewolf)
+        )
+
       assert kill.result == %{"killed" => true}
 
-      seer_action1 = Games.create_action!(night1.id, p.seer.id, p.werewolf.id, :investigate)
+      seer_action1 =
+        Games.create_action!(night1.id, p.seer.id, p.werewolf.id, :investigate,
+          actor: actor_for(p.seer)
+        )
+
       assert seer_action1.result == %{"is_werewolf" => true}
 
       game = Games.end_night!(game, %{now: @dawn})
 
       assert game.state == :day
-      assert Games.get_player!(p.villager.id).alive == false
-      assert Games.get_action!(seer_action1.id).result == %{"is_werewolf" => true}
-      assert Games.get_action!(protect1.id).target_id == p.hunter.id
-      assert Games.get_player!(p.hunter.id).alive == true
+      assert Games.get_player!(p.villager.id, authorize?: false).alive == false
+
+      assert Games.get_action!(seer_action1.id, authorize?: false).result == %{
+               "is_werewolf" => true
+             }
+
+      assert Games.get_action!(protect1.id, authorize?: false).target_id == p.hunter.id
+      assert Games.get_player!(p.hunter.id, authorize?: false).alive == true
 
       game = Games.end_day!(game, %{now: ~U[2026-06-16 20:00:00Z]})
       night2 = current_phase(game)
 
-      seer_action2 = Games.create_action!(night2.id, p.seer.id, p.hunter.id, :investigate)
+      seer_action2 =
+        Games.create_action!(night2.id, p.seer.id, p.hunter.id, :investigate,
+          actor: actor_for(p.seer)
+        )
+
       assert seer_action2.result == %{"is_werewolf" => false}
     end
 
@@ -620,11 +808,17 @@ defmodule WerewolfAsh.Games.ActionTest do
       game = force_state(game, :hunter_pending)
       day = current_phase(game)
 
-      shot = Games.create_action!(day.id, p.hunter.id, p.villager.id, :shoot)
+      shot =
+        Games.create_action!(day.id, p.hunter.id, p.villager.id, :shoot,
+          actor: actor_for(p.hunter)
+        )
+
       assert shot.type == :shoot
 
       assert {:error, %Ash.Error.Invalid{errors: [%{field: :actor_id}]}} =
-               Games.create_action(day.id, p.villager.id, p.werewolf.id, :shoot)
+               Games.create_action(day.id, p.villager.id, p.werewolf.id, :shoot,
+                 actor: actor_for(p.villager)
+               )
     end
   end
 end

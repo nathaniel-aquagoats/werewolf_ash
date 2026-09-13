@@ -41,8 +41,8 @@ defmodule WerewolfAsh.Games.Game.Changes.ResolveDayVoteTest do
       villager1 = generate(player(game_id: game.id, role: :villager))
       villager2 = generate(player(game_id: game.id, role: :villager))
 
-      Games.create_action!(day.id, villager1.id, wolf.id, :vote)
-      Games.create_action!(day.id, villager2.id, wolf.id, :vote)
+      Games.create_action!(day.id, villager1.id, wolf.id, :vote, authorize?: false)
+      Games.create_action!(day.id, villager2.id, wolf.id, :vote, authorize?: false)
 
       {changeset, advance_hook, resolve_hook} = stage_hooks(game, @now)
 
@@ -54,7 +54,7 @@ defmodule WerewolfAsh.Games.Game.Changes.ResolveDayVoteTest do
 
       assert resolved.state == :finished
       assert resolved.winner == :village
-      assert Games.get_player!(wolf.id).alive == false
+      assert Games.get_player!(wolf.id, authorize?: false).alive == false
 
       assert Games.list_phases!(query: [filter: [id: night.id]]) == []
       refute is_nil(Games.get_phase!(day.id).ended_at)
@@ -67,8 +67,8 @@ defmodule WerewolfAsh.Games.Game.Changes.ResolveDayVoteTest do
       villager1 = generate(player(game_id: game.id, role: :villager))
       generate(player(game_id: game.id, role: :villager))
 
-      Games.create_action!(day.id, villager1.id, wolf.id, :vote)
-      Games.create_action!(day.id, wolf.id, villager1.id, :vote)
+      Games.create_action!(day.id, villager1.id, wolf.id, :vote, authorize?: false)
+      Games.create_action!(day.id, wolf.id, villager1.id, :vote, authorize?: false)
 
       {changeset, advance_hook, resolve_hook} = stage_hooks(game, @now)
 
@@ -82,8 +82,8 @@ defmodule WerewolfAsh.Games.Game.Changes.ResolveDayVoteTest do
       night_after = Games.get_phase!(night_before.id)
       assert night_after.ended_at == nil
       assert night_after.number == night_before.number
-      assert Games.get_player!(wolf.id).alive == true
-      assert Games.get_player!(villager1.id).alive == true
+      assert Games.get_player!(wolf.id, authorize?: false).alive == true
+      assert Games.get_player!(villager1.id, authorize?: false).alive == true
     end
   end
 end

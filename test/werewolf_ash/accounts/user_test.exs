@@ -9,8 +9,10 @@ defmodule WerewolfAsh.Accounts.UserTest do
 
   import WerewolfAsh.Generators
 
+  alias Ash.Query
   alias WerewolfAsh.Accounts
   alias WerewolfAsh.Accounts.User
+  alias WerewolfAsh.Games
 
   describe "set_name/2,3 (the attribute and action)" do
     test "trims and stores a valid name" do
@@ -62,6 +64,72 @@ defmodule WerewolfAsh.Accounts.UserTest do
 
       assert {:error, %Ash.Error.Forbidden{}} = Accounts.set_name(user, "Anon", actor: nil)
       assert Ash.get!(User, user.id, authorize?: false).name == "Original"
+    end
+  end
+
+  describe "the bare :read action (rule 13)" do
+    test "returns nothing for an anonymous actor" do
+      user = generate(user())
+
+      assert Ash.read!(User) == []
+      assert {:error, %Ash.Error.Invalid{}} = Ash.get(User, user.id)
+    end
+
+    test "returns nothing for a signed-in actor who shares no game with the target" do
+      target = generate(user())
+      stranger = generate(user())
+
+      assert Ash.read!(User, actor: stranger) == []
+      assert {:error, %Ash.Error.Invalid{}} = Ash.get(User, target.id, actor: stranger)
+    end
+  end
+
+  describe "rule 17 - the shared-game read grant" do
+    test "a fellow player of the same game can read the target's :id and :name" do
+      game = generate(game())
+      alice = generate(user(name: "Alice"))
+      bob = generate(user(name: "Bob"))
+      Games.add_player!(game.id, alice.id)
+      Games.add_player!(game.id, bob.id)
+
+      reloaded = Ash.get!(User, bob.id, actor: alice)
+      assert reloaded.id == bob.id
+      assert reloaded.name == "Bob"
+    end
+
+    test "a signed-in user sharing no game with the target gets nothing" do
+      game = generate(game())
+      alice = generate(user())
+      Games.add_player!(game.id, alice.id)
+      stranger = generate(user())
+
+      assert {:error, %Ash.Error.Invalid{}} = Ash.get(User, alice.id, actor: stranger)
+    end
+
+    test "email stays visible only on the actor's own row, even for a fellow player" do
+      game = generate(game())
+      alice = generate(user())
+      bob = generate(user())
+      Games.add_player!(game.id, alice.id)
+      Games.add_player!(game.id, bob.id)
+
+      reloaded = Ash.get!(User, bob.id, actor: alice)
+      assert %Ash.ForbiddenField{} = reloaded.email
+
+      own_row = Ash.get!(User, alice.id, actor: alice)
+      assert own_row.email == alice.email
+    end
+
+    test "a signed-in actor seated in no game at all still reads their own :name via :current_user" do
+      user = generate(user(name: "Solo"))
+
+      reloaded =
+        User
+        |> Query.for_read(:current_user, %{}, actor: user)
+        |> Ash.read_one!()
+
+      assert reloaded.id == user.id
+      assert reloaded.name == "Solo"
     end
   end
 end

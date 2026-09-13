@@ -31,16 +31,16 @@ defmodule WerewolfAsh.Games.MessageTest do
   end
 
   defp post!(player, channel, body \\ "hello") do
-    Games.send_message!(player.game_id, player.id, channel, body)
+    Games.send_message!(player.game_id, player.id, channel, body, authorize?: false)
   end
 
   defp post(player, channel, body \\ "hello") do
-    Games.send_message(player.game_id, player.id, channel, body)
+    Games.send_message(player.game_id, player.id, channel, body, authorize?: false)
   end
 
   defp visible_ids(player, opts \\ []) do
     player.id
-    |> Games.list_messages_visible_to!(opts)
+    |> Games.list_messages_visible_to!(Keyword.put(opts, :authorize?, false))
     |> Enum.map(& &1.id)
   end
 
@@ -85,10 +85,10 @@ defmodule WerewolfAsh.Games.MessageTest do
     end
 
     test "the author must be a player of the game", ctx do
-      Games.send_message(ctx.game.id, ctx.outsider.id, :village, "psst")
+      Games.send_message(ctx.game.id, ctx.outsider.id, :village, "psst", authorize?: false)
       |> assert_rejected(:author_id, "must be a player in this game")
 
-      Games.send_message(ctx.game.id, UUID.generate(), :village, "boo")
+      Games.send_message(ctx.game.id, UUID.generate(), :village, "boo", authorize?: false)
       |> assert_rejected(:author_id, "must be a player in this game")
     end
 
@@ -146,12 +146,14 @@ defmodule WerewolfAsh.Games.MessageTest do
     end
 
     test "messages never cross games, and an unknown player sees nothing", ctx do
-      assert [%{body: "another game"}] = Games.list_messages_visible_to!(ctx.outsider.id)
-      assert Games.list_messages_visible_to!(UUID.generate()) == []
+      assert [%{body: "another game"}] =
+               Games.list_messages_visible_to!(ctx.outsider.id, authorize?: false)
+
+      assert Games.list_messages_visible_to!(UUID.generate(), authorize?: false) == []
     end
 
     test "messages come back oldest first", ctx do
-      messages = Games.list_messages_visible_to!(ctx.dead_wolf.id)
+      messages = Games.list_messages_visible_to!(ctx.dead_wolf.id, authorize?: false)
 
       assert Enum.map(messages, & &1.body) == ["1 village", "2 wolves", "3 village", "4 wolves"]
       assert messages == Enum.sort_by(messages, & &1.inserted_at, DateTime)
@@ -159,7 +161,7 @@ defmodule WerewolfAsh.Games.MessageTest do
 
     test "the author can be loaded", ctx do
       assert [%{author: %{id: author_id}} | _] =
-               Games.list_messages_visible_to!(ctx.villager.id, load: :author)
+               Games.list_messages_visible_to!(ctx.villager.id, load: :author, authorize?: false)
 
       assert author_id == ctx.villager.id
     end
@@ -185,6 +187,6 @@ defmodule WerewolfAsh.Games.MessageTest do
   defp messages_in(game) do
     Message
     |> Query.filter(game_id == ^game.id)
-    |> Ash.read!()
+    |> Ash.read!(authorize?: false)
   end
 end

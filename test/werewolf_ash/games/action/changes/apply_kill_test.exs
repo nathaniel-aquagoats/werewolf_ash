@@ -18,7 +18,13 @@ defmodule WerewolfAsh.Games.Action.Changes.ApplyKillTest do
         type: :kill
       })
 
-    changeset = ApplyKill.change(Changeset.new(%Action{}), [], %{})
+    # `context: %{authorize?: false}`, not `%{}`: this helper invokes the
+    # hook directly, never through the real :kill action, so there is no
+    # real actor to forward. In production `opts` carries the werewolf who
+    # submitted the kill, who already satisfies Player's own read policy
+    # (rule 4) for a fellow game member; bypassing here pins the same
+    # "game rule, not an access check" behavior without needing one.
+    changeset = ApplyKill.change(Changeset.new(%Action{}), [], %{authorize?: false})
     assert [hook] = changeset.after_action
 
     hook.(changeset, action)
@@ -35,7 +41,7 @@ defmodule WerewolfAsh.Games.Action.Changes.ApplyKillTest do
       assert {:ok, updated} = stage(target, werewolf, night)
 
       assert updated.result == %{"killed" => true}
-      assert Games.get_player!(target.id).alive == false
+      assert Games.get_player!(target.id, authorize?: false).alive == false
     end
 
     test "a target protected that day survives and the kill is spent" do
@@ -46,12 +52,12 @@ defmodule WerewolfAsh.Games.Action.Changes.ApplyKillTest do
       werewolf = generate(player(game_id: game.id, role: :werewolf))
       target = generate(player(game_id: game.id, role: :villager))
 
-      Games.create_action!(day.id, bodyguard.id, target.id, :protect)
+      Games.create_action!(day.id, bodyguard.id, target.id, :protect, authorize?: false)
 
       assert {:ok, updated} = stage(target, werewolf, night)
 
       assert updated.result == %{"killed" => false}
-      assert Games.get_player!(target.id).alive == true
+      assert Games.get_player!(target.id, authorize?: false).alive == true
     end
 
     test "a kill on a game's first-ever phase behaves like the unprotected case" do
@@ -63,7 +69,7 @@ defmodule WerewolfAsh.Games.Action.Changes.ApplyKillTest do
       assert {:ok, updated} = stage(target, werewolf, night)
 
       assert updated.result == %{"killed" => true}
-      assert Games.get_player!(target.id).alive == false
+      assert Games.get_player!(target.id, authorize?: false).alive == false
     end
   end
 end

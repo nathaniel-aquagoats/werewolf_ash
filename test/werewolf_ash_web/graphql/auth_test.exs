@@ -26,7 +26,9 @@ defmodule WerewolfAshWeb.Graphql.AuthTest do
   import Phoenix.ConnTest, except: [connect: 2, connect: 3]
   import Phoenix.ChannelTest, only: [connect: 2, connect: 3]
 
+  alias AshAuthentication.TokenResource
   alias WerewolfAsh.Accounts.BearerToken
+  alias WerewolfAsh.Accounts.Token
   alias WerewolfAsh.Accounts.User
   alias WerewolfAsh.Accounts.User.Senders.SendMagicLinkEmail
   alias WerewolfAshWeb.Graphql.AuthTest.FailingMailerAdapter
@@ -366,6 +368,25 @@ defmodule WerewolfAshWeb.Graphql.AuthTest do
 
     test "returns :error for a token that isn't a valid, currently-issued user token" do
       assert :error = BearerToken.user_from_token("garbage")
+    end
+
+    test "a revoked bearer token stops resolving, for user_from_token/1 and currentUser alike (rule 14)",
+         %{conn: conn} do
+      email = unique_email()
+      token = request_token(conn, email)
+
+      assert %{"data" => %{"signInWithMagicLink" => %{"metadata" => %{"token" => bearer}}}} =
+               gql(conn, @sign_in, %{"token" => token})
+
+      assert {:ok, %User{}} = BearerToken.user_from_token(bearer)
+
+      assert :ok = TokenResource.revoke(Token, bearer)
+
+      assert :error = BearerToken.user_from_token(bearer)
+
+      assert conn
+             |> put_req_header("authorization", "Bearer #{bearer}")
+             |> gql(@current_user) == %{"data" => %{"currentUser" => nil}}
     end
   end
 end

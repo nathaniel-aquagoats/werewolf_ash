@@ -63,7 +63,9 @@ defmodule WerewolfAsh.Generators do
         game_id: StreamData.repeatedly(fn -> generate(game()).id end),
         user_id: StreamData.repeatedly(fn -> generate(user()).id end)
       ],
-      after_action: fn player -> Games.update_player!(player, %{role: role}) end,
+      after_action: fn player ->
+        Games.update_player!(player, %{role: role}, authorize?: false)
+      end,
       overrides: opts
     )
   end

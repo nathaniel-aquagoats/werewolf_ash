@@ -67,7 +67,7 @@ defmodule WerewolfAsh.GamesTest do
       assert game.state == :lobby
 
       # no `players` argument still seats exactly one player: the owner.
-      assert [player] = Games.get_game!(game.id, load: :players).players
+      assert [player] = Games.get_game!(game.id, load: :players, authorize?: false).players
       assert player.user_id == owner.id
       assert is_nil(player.role)
     end
@@ -75,7 +75,7 @@ defmodule WerewolfAsh.GamesTest do
     test "looks a game up by its join code" do
       game = generate(game())
 
-      assert Games.get_game_by_join_code!(game.join_code).id == game.id
+      assert Games.get_game_by_join_code!(game.join_code, authorize?: false).id == game.id
       assert {:error, %Ash.Error.Invalid{}} = Games.get_game_by_join_code("NOPE0000")
     end
 
@@ -240,7 +240,9 @@ defmodule WerewolfAsh.GamesTest do
                }
              ] = phases(game)
 
-      game = Games.get_game!(game.id, load: [:current_phase, :last_phase_number])
+      game =
+        Games.get_game!(game.id, load: [:current_phase, :last_phase_number], authorize?: false)
+
       assert game.last_phase_number == 3
       assert %{number: 3, kind: :day} = game.current_phase
     end
@@ -350,7 +352,7 @@ defmodule WerewolfAsh.GamesTest do
                Games.end_night(game, %{now: now})
 
       # a rejected transition writes nothing
-      assert Games.get_game!(game.id).state == :day
+      assert Games.get_game!(game.id, authorize?: false).state == :day
       assert [%{number: 1, kind: :day, ended_at: nil}] = phases(game)
     end
 
@@ -358,19 +360,29 @@ defmodule WerewolfAsh.GamesTest do
       %{game: game, owner: owner} = ready()
       stranger = generate(user())
 
-      assert {:error, %Ash.Error.Invalid{errors: [error]}} = Games.start_game(game)
-      assert %Ash.Error.Changes.InvalidAttribute{field: :owner_id} = error
+      # rule 3a - a non-owner or anonymous actor is forbidden by the policy,
+      # not by ActorIsOwner's own (now before_action?) validation.
+      assert {:error, %Ash.Error.Forbidden{errors: [%Ash.Error.Forbidden.Policy{}]}} =
+               Games.start_game(game)
 
-      assert {:error, %Ash.Error.Invalid{errors: [error]}} =
+      assert {:error, %Ash.Error.Forbidden{errors: [%Ash.Error.Forbidden.Policy{}]}} =
                Games.start_game(game, %{}, actor: stranger)
 
-      assert %Ash.Error.Changes.InvalidAttribute{field: :owner_id} = error
+      assert Games.get_game!(game.id, authorize?: false).state == :lobby
 
-      assert Games.get_game!(game.id).state == :lobby
-
-      for player <- Games.list_players!(query: [filter: [game_id: game.id]]) do
+      for player <- Games.list_players!(query: [filter: [game_id: game.id]], authorize?: false) do
         assert is_nil(player.role)
       end
+    end
+
+    test "rule 3a - a non-owner actor called with authorize?: false still gets ActorIsOwner's own validation error" do
+      %{game: game} = ready()
+      stranger = generate(user())
+
+      assert {:error, %Ash.Error.Invalid{errors: [error]}} =
+               Games.start_game(game, %{}, actor: stranger, authorize?: false)
+
+      assert %Ash.Error.Changes.InvalidAttribute{field: :owner_id} = error
     end
 
     test "requires at least 5 seated players" do
@@ -384,7 +396,7 @@ defmodule WerewolfAsh.GamesTest do
       # `:players` is not a real attribute/argument, so Ash reports it as
       # InvalidChanges (a `fields` list) rather than InvalidAttribute.
       assert %Ash.Error.Changes.InvalidChanges{fields: [:players]} = error
-      assert Games.get_game!(game.id).state == :lobby
+      assert Games.get_game!(game.id, authorize?: false).state == :lobby
     end
 
     test "refuses a configuration the seated players cannot satisfy (rule 9)" do
@@ -400,7 +412,7 @@ defmodule WerewolfAsh.GamesTest do
       assert %Ash.Error.Changes.InvalidChanges{fields: [:players]} = error
 
       # no roles are dealt when this fires
-      assert Games.list_players!(query: [filter: [game_id: game.id]])
+      assert Games.list_players!(query: [filter: [game_id: game.id]], authorize?: false)
              |> Enum.all?(&is_nil(&1.role))
     end
 
@@ -411,7 +423,7 @@ defmodule WerewolfAsh.GamesTest do
       assert game.state in [:day, :night]
 
       roles =
-        Games.list_players!(query: [filter: [game_id: game.id]])
+        Games.list_players!(query: [filter: [game_id: game.id]], authorize?: false)
         |> Enum.map(& &1.role)
         |> Enum.frequencies()
 
@@ -434,39 +446,40 @@ defmodule WerewolfAsh.GamesTest do
       game = Games.start_game!(game, %{now: ~U[2026-06-15 09:30:00Z]}, actor: owner)
 
       players =
-        Games.list_players!(query: [filter: [game_id: game.id]])
+        Games.list_players!(query: [filter: [game_id: game.id]], authorize?: false)
         |> Map.new(&{&1.role, &1})
 
       %{game: game, players: players}
     end
 
-    defp open_day_phase(game), do: Games.get_game!(game.id, load: :current_phase).current_phase
+    defp open_day_phase(game),
+      do: Games.get_game!(game.id, load: :current_phase, authorize?: false).current_phase
 
     test "a plurality lynch that does not end the game: the target dies and the game moves to night (rules 6, 15)" do
       %{game: game, players: p} = started_day_game()
       day = open_day_phase(game)
 
-      Games.create_action!(day.id, p.seer.id, p.villager.id, :vote)
-      Games.create_action!(day.id, p.bodyguard.id, p.villager.id, :vote)
+      Games.create_action!(day.id, p.seer.id, p.villager.id, :vote, authorize?: false)
+      Games.create_action!(day.id, p.bodyguard.id, p.villager.id, :vote, authorize?: false)
 
       game = Games.end_day!(game, %{now: ~U[2026-06-15 20:00:00Z]})
 
       assert game.state == :night
-      assert Games.get_player!(p.villager.id).alive == false
+      assert Games.get_player!(p.villager.id, authorize?: false).alive == false
     end
 
     test "a plurality lynch that removes the last living wolf finishes the game (rules 6, 12, 13, 14)" do
       %{game: game, players: p} = started_day_game()
       day = open_day_phase(game)
 
-      Games.create_action!(day.id, p.villager.id, p.werewolf.id, :vote)
-      Games.create_action!(day.id, p.seer.id, p.werewolf.id, :vote)
+      Games.create_action!(day.id, p.villager.id, p.werewolf.id, :vote, authorize?: false)
+      Games.create_action!(day.id, p.seer.id, p.werewolf.id, :vote, authorize?: false)
 
       game = Games.end_day!(game, %{now: ~U[2026-06-15 20:00:00Z]})
 
       assert game.state == :finished
       assert game.winner == :village
-      assert Games.get_player!(p.werewolf.id).alive == false
+      assert Games.get_player!(p.werewolf.id, authorize?: false).alive == false
 
       game_phases = Games.list_phases!(query: [filter: [game_id: game.id]])
       refute Enum.any?(game_phases, &is_nil(&1.ended_at))
@@ -477,12 +490,12 @@ defmodule WerewolfAsh.GamesTest do
       %{game: game, players: p} = started_day_game()
       day = open_day_phase(game)
 
-      Games.create_action!(day.id, p.seer.id, p.hunter.id, :vote)
-      Games.create_action!(day.id, p.bodyguard.id, p.hunter.id, :vote)
+      Games.create_action!(day.id, p.seer.id, p.hunter.id, :vote, authorize?: false)
+      Games.create_action!(day.id, p.bodyguard.id, p.hunter.id, :vote, authorize?: false)
 
       game = Games.end_day!(game, %{now: ~U[2026-06-15 20:00:00Z]})
 
-      assert Games.get_player!(p.hunter.id).alive == false
+      assert Games.get_player!(p.hunter.id, authorize?: false).alive == false
       assert game.state == :night
     end
   end
@@ -495,18 +508,20 @@ defmodule WerewolfAsh.GamesTest do
     test "adds and removes players one at a time", %{game: game} do
       alice = generate(user())
 
-      player = Games.add_player!(game.id, alice.id)
+      player = Games.add_player!(game.id, alice.id, authorize?: false)
       assert player.user_id == alice.id
       assert player.game_id == game.id
       assert player.alive
       assert is_nil(player.role)
 
       # the game's own owner is already seated, so this is the second player.
-      assert Games.list_players!(query: [filter: [game_id: game.id]]) |> length() == 2
+      assert Games.list_players!(query: [filter: [game_id: game.id]], authorize?: false)
+             |> length() == 2
 
       Games.remove_player!(player)
 
-      assert Games.list_players!(query: [filter: [game_id: game.id]]) |> Enum.map(& &1.user_id) ==
+      assert Games.list_players!(query: [filter: [game_id: game.id]], authorize?: false)
+             |> Enum.map(& &1.user_id) ==
                [game.owner_id]
     end
 
@@ -537,19 +552,21 @@ defmodule WerewolfAsh.GamesTest do
 
     test "a seat cannot be given up once the game has left the lobby" do
       %{game: game, owner: owner} = ready()
-      [player | _] = Games.list_players!(query: [filter: [game_id: game.id]])
+
+      [player | _] =
+        Games.list_players!(query: [filter: [game_id: game.id]], authorize?: false)
 
       Games.start_game!(game, actor: owner)
 
       assert {:error, %Ash.Error.Invalid{errors: [error]}} = Games.remove_player(player)
       assert %Ash.Error.Changes.InvalidAttribute{field: :game_id} = error
-      assert Games.get_player!(player.id).id == player.id
+      assert Games.get_player!(player.id, authorize?: false).id == player.id
     end
 
     test "updates role and aliveness", %{game: game} do
       player = Games.add_player!(game.id, generate(user()).id)
 
-      player = Games.update_player!(player, %{role: :seer})
+      player = Games.update_player!(player, %{role: :seer}, authorize?: false)
       assert player.role == :seer
 
       player = Games.update_player!(player, %{alive: false})
@@ -562,7 +579,7 @@ defmodule WerewolfAsh.GamesTest do
       Games.add_player!(game.id, generate(user()).id)
       Games.destroy_game!(game)
 
-      assert Games.list_players!(query: [filter: [game_id: game.id]]) == []
+      assert Games.list_players!(query: [filter: [game_id: game.id]], authorize?: false) == []
     end
 
     test "refuses to seat a nameless user and creates no player", %{game: game} do
@@ -572,7 +589,9 @@ defmodule WerewolfAsh.GamesTest do
                Games.add_player(game.id, nameless.id)
 
       assert %{fields: [:name]} = error
-      assert Games.list_players!(query: [filter: [user_id: nameless.id]]) == []
+
+      assert Games.list_players!(query: [filter: [user_id: nameless.id]], authorize?: false) ==
+               []
     end
 
     test "seats a named user, exactly as before this rule existed", %{game: game} do
@@ -612,7 +631,8 @@ defmodule WerewolfAsh.GamesTest do
                &match?(%Ash.Error.Changes.InvalidAttribute{field: :game_id}, &1)
              )
 
-      assert Games.list_players!(query: [filter: [game_id: game.id]]) |> length() == 4
+      assert Games.list_players!(query: [filter: [game_id: game.id]], authorize?: false)
+             |> length() == 4
     end
 
     test "add_player is never refused on max_players when it is nil", %{game: game} do
@@ -629,7 +649,7 @@ defmodule WerewolfAsh.GamesTest do
       game = generate(game())
       user = generate(user())
 
-      player = Games.join_game!(game.join_code, user.id)
+      player = Games.join_game!(game.join_code, user.id, authorize?: false)
 
       assert player.user_id == user.id
       assert player.game_id == game.id
@@ -644,7 +664,9 @@ defmodule WerewolfAsh.GamesTest do
                Games.join_game(game.join_code, nameless.id)
 
       assert %{fields: [:name]} = error
-      assert Games.list_players!(query: [filter: [user_id: nameless.id]]) == []
+
+      assert Games.list_players!(query: [filter: [user_id: nameless.id]], authorize?: false) ==
+               []
     end
 
     test "seats a named user via join, exactly as before this rule existed" do
@@ -728,7 +750,9 @@ defmodule WerewolfAsh.GamesTest do
                Games.join_game(game.join_code, user.id)
 
       assert %Ash.Error.Changes.InvalidArgument{field: :join_code} = error
-      assert Games.list_players!(query: [filter: [game_id: game.id]]) |> length() == 4
+
+      assert Games.list_players!(query: [filter: [game_id: game.id]], authorize?: false)
+             |> length() == 4
     end
 
     test "a join is never refused on max_players when it is nil" do
@@ -763,11 +787,36 @@ defmodule WerewolfAsh.GamesTest do
       stranger = generate(user())
       game = generate(game(owner_id: owner.id))
 
-      assert {:error, %Ash.Error.Invalid{errors: [error]}} =
+      # rule 3b - a non-owner actor is forbidden by the policy, not by
+      # ActorIsOwner's own (now before_action?) validation.
+      assert {:error, %Ash.Error.Forbidden{errors: [%Ash.Error.Forbidden.Policy{}]}} =
                Games.update_game_settings(game, %{max_players: 6}, actor: stranger)
 
-      assert %Ash.Error.Changes.InvalidAttribute{field: :owner_id} = error
       assert is_nil(Games.get_game!(game.id, authorize?: false).max_players)
+    end
+
+    test "rejects an anonymous caller (rule 2)" do
+      owner = generate(user())
+      game = generate(game(owner_id: owner.id))
+
+      assert {:error, %Ash.Error.Forbidden{errors: [%Ash.Error.Forbidden.Policy{}]}} =
+               Games.update_game_settings(game, %{max_players: 6})
+
+      assert is_nil(Games.get_game!(game.id, authorize?: false).max_players)
+    end
+
+    test "rule 3b - a non-owner actor called with authorize?: false still gets ActorIsOwner's own validation error" do
+      owner = generate(user())
+      stranger = generate(user())
+      game = generate(game(owner_id: owner.id))
+
+      assert {:error, %Ash.Error.Invalid{errors: [error]}} =
+               Games.update_game_settings(game, %{max_players: 6},
+                 actor: stranger,
+                 authorize?: false
+               )
+
+      assert %Ash.Error.Changes.InvalidAttribute{field: :owner_id} = error
     end
 
     test "rejects a change once the game has already left the lobby (rule 3)" do
@@ -865,7 +914,9 @@ defmodule WerewolfAsh.GamesTest do
 
       assert %Ash.Error.Changes.InvalidAttribute{field: :max_players} = error
 
-      assert Games.list_players!(query: [filter: [game_id: game.id]]) |> length() == 3
+      assert Games.list_players!(query: [filter: [game_id: game.id]], authorize?: false)
+             |> length() == 3
+
       reloaded = Games.get_game!(game.id, authorize?: false)
       assert reloaded.max_players == game.max_players
       assert reloaded.min_players == game.min_players
@@ -934,7 +985,7 @@ defmodule WerewolfAsh.GamesTest do
       game = Games.start_game!(game, actor: owner)
 
       roles =
-        Games.list_players!(query: [filter: [game_id: game.id]])
+        Games.list_players!(query: [filter: [game_id: game.id]], authorize?: false)
         |> Enum.map(& &1.role)
         |> Enum.frequencies()
 
@@ -956,7 +1007,8 @@ defmodule WerewolfAsh.GamesTest do
       assert is_nil(day.ended_at)
       assert is_nil(day.summary)
 
-      assert Games.get_game!(game.id, load: :phases).phases |> Enum.map(& &1.id) ==
+      assert Games.get_game!(game.id, load: :phases, authorize?: false).phases
+             |> Enum.map(& &1.id) ==
                [day.id, night.id]
     end
 
@@ -1001,7 +1053,8 @@ defmodule WerewolfAsh.GamesTest do
     end
 
     test "records who did what to whom in a phase", ctx do
-      action = Games.create_action!(ctx.phase.id, ctx.alice.id, ctx.bob.id, :vote)
+      action =
+        Games.create_action!(ctx.phase.id, ctx.alice.id, ctx.bob.id, :vote, authorize?: false)
 
       assert action.type == :vote
       assert is_nil(action.result)
@@ -1009,41 +1062,57 @@ defmodule WerewolfAsh.GamesTest do
       action = Games.update_action!(action, %{result: %{"counted" => true}})
       assert action.result == %{"counted" => true}
 
-      alice = Games.get_player!(ctx.alice.id, load: [:performed_actions, :targeted_by_actions])
+      alice =
+        Games.get_player!(ctx.alice.id,
+          load: [:performed_actions, :targeted_by_actions],
+          authorize?: false
+        )
+
       assert [%{id: id}] = alice.performed_actions
       assert id == action.id
       assert alice.targeted_by_actions == []
 
-      bob = Games.get_player!(ctx.bob.id, load: [:targeted_by_actions])
+      bob = Games.get_player!(ctx.bob.id, load: [:targeted_by_actions], authorize?: false)
       assert [%{id: ^id}] = bob.targeted_by_actions
 
-      assert [%{id: ^id}] = Games.get_phase!(ctx.phase.id, load: :actions).actions
+      assert [%{id: ^id}] =
+               Games.get_phase!(ctx.phase.id, load: :actions, authorize?: false).actions
     end
 
     test "allows one action per actor, phase and type", ctx do
-      Games.create_action!(ctx.phase.id, ctx.alice.id, ctx.bob.id, :vote)
+      Games.create_action!(ctx.phase.id, ctx.alice.id, ctx.bob.id, :vote, authorize?: false)
 
       assert {:error, %Ash.Error.Invalid{errors: [%{field: :phase_id}]}} =
-               Games.create_action(ctx.phase.id, ctx.alice.id, ctx.alice.id, :vote)
+               Games.create_action(ctx.phase.id, ctx.alice.id, ctx.alice.id, :vote,
+                 authorize?: false
+               )
 
       # a different type in the same phase is fine
       Games.update_player!(ctx.alice, %{role: :bodyguard})
 
       assert %{type: :protect} =
-               Games.create_action!(ctx.phase.id, ctx.alice.id, ctx.bob.id, :protect)
+               Games.create_action!(ctx.phase.id, ctx.alice.id, ctx.bob.id, :protect,
+                 authorize?: false
+               )
 
       # and so is the same type in another phase
       day2 = Games.create_phase!(ctx.game.id, :day, 2)
-      assert %{type: :vote} = Games.create_action!(day2.id, ctx.alice.id, ctx.bob.id, :vote)
+
+      assert %{type: :vote} =
+               Games.create_action!(day2.id, ctx.alice.id, ctx.bob.id, :vote, authorize?: false)
     end
 
     test "rejects unknown types", ctx do
       assert {:error, %Ash.Error.Invalid{errors: [%{field: :type}]}} =
-               Games.create_action(ctx.phase.id, ctx.alice.id, ctx.bob.id, :dance)
+               Games.create_action(ctx.phase.id, ctx.alice.id, ctx.bob.id, :dance,
+                 authorize?: false
+               )
     end
 
     test "are deleted along with their phase", ctx do
-      action = Games.create_action!(ctx.phase.id, ctx.alice.id, ctx.bob.id, :vote)
+      action =
+        Games.create_action!(ctx.phase.id, ctx.alice.id, ctx.bob.id, :vote, authorize?: false)
+
       Ash.destroy!(ctx.phase)
 
       assert {:error, %Ash.Error.Invalid{}} = Games.get_action(action.id)

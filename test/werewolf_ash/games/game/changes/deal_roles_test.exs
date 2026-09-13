@@ -20,7 +20,7 @@ defmodule WerewolfAsh.Games.Game.Changes.DealRolesTest do
       assert {:ok, ^game} = hook.(changeset, game)
 
       roles =
-        Games.list_players!(query: [filter: [game_id: game.id]])
+        Games.list_players!(query: [filter: [game_id: game.id]], authorize?: false)
         |> Enum.map(& &1.role)
         |> Enum.frequencies()
 
@@ -32,7 +32,11 @@ defmodule WerewolfAsh.Games.Game.Changes.DealRolesTest do
       generate_many(player(game_id: game.id), 4)
 
       other_game = generate(game())
-      other_player = List.first(Games.list_players!(query: [filter: [game_id: other_game.id]]))
+
+      other_player =
+        List.first(
+          Games.list_players!(query: [filter: [game_id: other_game.id]], authorize?: false)
+        )
 
       changeset = Changeset.for_update(game, :update, %{}, authorize?: false)
       changeset = DealRoles.change(changeset, [], %{})
@@ -40,7 +44,7 @@ defmodule WerewolfAsh.Games.Game.Changes.DealRolesTest do
       assert [hook] = changeset.after_action
       assert {:ok, _game} = hook.(changeset, game)
 
-      assert is_nil(Games.get_player!(other_player.id).role)
+      assert is_nil(Games.get_player!(other_player.id, authorize?: false).role)
     end
   end
 end

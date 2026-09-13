@@ -52,6 +52,12 @@ defmodule WerewolfAsh.Games.Reactors.CheckWin do
   read :living_players, Player, :living_in_game do
     description "Only living players count towards the outcome."
     inputs %{game_id: input(:game_id)}
+
+    # This step runs with no request actor at all (the scheduler drives
+    # end_day/end_night), so it must not be filtered by Player's own read
+    # policy (werewolf_ash-27w.2 rule 4) - the win check needs every living
+    # player, not just ones some actor could see.
+    authorize? false
   end
 
   step :count do

@@ -21,8 +21,10 @@ defmodule WerewolfAsh.Games.Message.VisibilityTest do
     dead =
       generate(player(game_id: game.id, role: :villager)) |> Games.update_player!(%{alive: false})
 
-    village_message = Games.send_message!(game.id, villager.id, :village, "village")
-    wolves_message = Games.send_message!(game.id, wolf.id, :wolves, "wolves")
+    village_message =
+      Games.send_message!(game.id, villager.id, :village, "village", authorize?: false)
+
+    wolves_message = Games.send_message!(game.id, wolf.id, :wolves, "wolves", authorize?: false)
 
     %{
       villager: villager,
@@ -36,7 +38,7 @@ defmodule WerewolfAsh.Games.Message.VisibilityTest do
   defp visible_message_ids(player_id) do
     Message
     |> Query.do_filter(Visibility.visible_to(expr(id == ^player_id)))
-    |> Ash.read!()
+    |> Ash.read!(authorize?: false)
     |> MapSet.new(& &1.id)
   end
 

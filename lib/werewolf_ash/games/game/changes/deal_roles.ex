@@ -25,7 +25,11 @@ defmodule WerewolfAsh.Games.Game.Changes.DealRoles do
   end
 
   defp deal(game, opts) do
-    players = Games.list_players!(query: [filter: [game_id: game.id]])
+    # Game rule, not an access check: the roster being dealt from must be
+    # every seated player, regardless of whether the actor who called
+    # `start` can still see them all under Player's own read policy
+    # (werewolf_ash-27w.2 rule 4).
+    players = Games.list_players!(query: [filter: [game_id: game.id]], authorize?: false)
     roles = Enum.shuffle(RoleAssignment.composition(length(players), game))
 
     players
