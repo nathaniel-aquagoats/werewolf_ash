@@ -1,5 +1,7 @@
 # werewolf_ash-qss.6: Night: kill aftermath (win check) and transition to day
 
+Implemented in PR #21.
+
 Depends on: none
 
 ## For the owner
