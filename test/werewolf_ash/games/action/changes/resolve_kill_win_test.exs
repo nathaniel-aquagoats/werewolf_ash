@@ -33,7 +33,10 @@ defmodule WerewolfAsh.Games.Action.Changes.ResolveKillWinTest do
   end
 
   defp stage(action) do
-    changeset = ResolveKillWin.change(Changeset.new(%Action{}), [], %{})
+    # `context: %{authorize?: false}`, not `%{}`: this helper invokes the
+    # hook directly, never through the real :kill action, so there is no
+    # real actor to forward for Game's own read policy (rule 1).
+    changeset = ResolveKillWin.change(Changeset.new(%Action{}), [], %{authorize?: false})
     assert [hook] = changeset.after_action
     hook.(changeset, action)
   end
@@ -52,7 +55,7 @@ defmodule WerewolfAsh.Games.Action.Changes.ResolveKillWinTest do
 
       assert {:ok, _action} = stage(action)
 
-      reloaded = Games.get_game!(game.id)
+      reloaded = Games.get_game!(game.id, authorize?: false)
       assert reloaded.state == :night
       assert is_nil(reloaded.winner)
     end
@@ -69,7 +72,7 @@ defmodule WerewolfAsh.Games.Action.Changes.ResolveKillWinTest do
 
       assert {:ok, _action} = stage(action)
 
-      reloaded = Games.get_game!(game.id)
+      reloaded = Games.get_game!(game.id, authorize?: false)
       assert reloaded.state == :finished
       assert reloaded.winner == :village
     end
@@ -85,7 +88,7 @@ defmodule WerewolfAsh.Games.Action.Changes.ResolveKillWinTest do
 
       assert {:ok, _action} = stage(action)
 
-      reloaded = Games.get_game!(game.id)
+      reloaded = Games.get_game!(game.id, authorize?: false)
       assert reloaded.state == :finished
       assert reloaded.winner == :wolves
     end
@@ -102,7 +105,10 @@ defmodule WerewolfAsh.Games.Action.Changes.ResolveKillWinTest do
       # implementation would finish the game here; a correct one leaves it
       # alone, since the kill was spent.
       owner =
-        Enum.find(Games.list_players!(query: [filter: [game_id: game.id]]), &is_nil(&1.role))
+        Enum.find(
+          Games.list_players!(query: [filter: [game_id: game.id]], authorize?: false),
+          &is_nil(&1.role)
+        )
 
       Games.update_player!(owner, %{alive: false})
 
@@ -110,10 +116,10 @@ defmodule WerewolfAsh.Games.Action.Changes.ResolveKillWinTest do
 
       assert {:ok, _action} = stage(action)
 
-      reloaded = Games.get_game!(game.id)
+      reloaded = Games.get_game!(game.id, authorize?: false)
       assert reloaded.state == :night
       assert is_nil(reloaded.winner)
-      assert Games.get_player!(target.id).alive == true
+      assert Games.get_player!(target.id, authorize?: false).alive == true
     end
 
     test "a decisive landed kill on a :lobby game makes ResolveWin fail, returning {:error, _}" do
@@ -128,7 +134,7 @@ defmodule WerewolfAsh.Games.Action.Changes.ResolveKillWinTest do
 
       assert {:error, _reason} = stage(action)
 
-      reloaded = Games.get_game!(game.id)
+      reloaded = Games.get_game!(game.id, authorize?: false)
       assert reloaded.state == :lobby
     end
   end

@@ -6,7 +6,6 @@ defmodule WerewolfAsh.Accounts.User do
     authorizers: [Ash.Policy.Authorizer],
     extensions: [AshAuthentication, AshGraphql.Resource]
 
-  alias Ash.Query
   alias AshAuthentication.Strategy.MagicLink.Request
 
   authentication do
@@ -51,6 +50,41 @@ defmodule WerewolfAsh.Accounts.User do
     type :user
   end
 
+  field_policies do
+    # rule 17 - :email is visible on the actor's own row, and on the two
+    # production paths that read it with no actor at all: an already-
+    # registered email's magic-link request (the AshAuthenticationInteraction
+    # context), and sign_in_with_magic_link's own create (matched by action
+    # name, since AshGraphql's create mutation never sets that context).
+    field_policy :email do
+      authorize_if AshAuthentication.Checks.AshAuthenticationInteraction
+
+      # AshGraphql's create mutation calls Ash.create/2 directly, never
+      # AshAuthentication.Strategy.MagicLink.Actions.sign_in/3, so the
+      # ash_authentication? context above is never set on this path.
+      # Every create's result is field-policy-checked a second time, though,
+      # via the automatic post-create reload (`Ash.Actions.Create.run/4`
+      # reloading through the resource's primary read action so any
+      # requested calculations/aggregates resolve) - that reload's own
+      # query carries `context.private.just_created_by_action`, set to the
+      # action that just ran, regardless of what the reload's own read
+      # action is named. `action(:sign_in_with_magic_link)` cannot be used
+      # here instead: it matches the *read* action driving that reload
+      # (never :sign_in_with_magic_link), not the create that produced the
+      # record.
+      authorize_if context_equals([:private, :just_created_by_action], :sign_in_with_magic_link)
+
+      authorize_if expr(id == ^actor(:id))
+    end
+
+    # :id and :name need no "shares a game" condition: this only decides
+    # whether a *visible* row's field is readable, and a signed-in user with
+    # no games yet must still see their own name via currentUser.
+    field_policy :* do
+      authorize_if always()
+    end
+  end
+
   postgres do
     table "users"
     repo WerewolfAsh.Repo
@@ -63,13 +97,12 @@ defmodule WerewolfAsh.Accounts.User do
       description "The user identified by the request's bearer token, if any."
       get? true
 
-      # Not an action `filter expr(id == ^actor(:id))`: that makes anonymous
-      # requests fail with `ReadActionRequiresActor`, whereas an anonymous
-      # caller asking "who am I?" should simply get nothing.
-      prepare fn
-        query, %{actor: nil} -> Query.do_filter(query, false)
-        query, %{actor: actor} -> Query.do_filter(query, id: actor.id)
-      end
+      # No custom prepare: this action's own policy below
+      # (`authorize_if expr(id == ^actor(:id))`) already filters an
+      # anonymous actor and a mismatched actor to nothing, without raising
+      # `ReadActionRequiresActor` - that error only comes from an *action*
+      # level `filter expr(...)` referencing the actor, not from a read
+      # policy.
     end
 
     read :get_by_subject do
@@ -164,6 +197,15 @@ defmodule WerewolfAsh.Accounts.User do
       description "A user may only set their own display name."
       authorize_if expr(id == ^actor(:id))
     end
+
+    # rule 17 - a signed-in actor may also read a fellow player's row: any
+    # `User` that shares a seat in at least one game with the actor. This is
+    # what lets `Player.user`/`Message.author.user` resolve for a fellow
+    # player, not just for yourself.
+    policy action(:read) do
+      description "A user may read a fellow user who shares a seat with them in some game."
+      authorize_if expr(exists(players, exists(game.players, user_id == ^actor(:id))))
+    end
   end
 
   attributes do
@@ -179,6 +221,12 @@ defmodule WerewolfAsh.Accounts.User do
       allow_nil? true
       public? true
       constraints min_length: 1, max_length: 40, trim?: true
+    end
+  end
+
+  relationships do
+    has_many :players, WerewolfAsh.Games.Player do
+      description "The seats this user holds across games; expresses which games they're in."
     end
   end
 

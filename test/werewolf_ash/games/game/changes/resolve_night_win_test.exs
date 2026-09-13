@@ -42,7 +42,10 @@ defmodule WerewolfAsh.Games.Game.Changes.ResolveNightWinTest do
       Games.update_player!(target, %{alive: false})
 
       owner =
-        Enum.find(Games.list_players!(query: [filter: [game_id: game.id]]), &is_nil(&1.role))
+        Enum.find(
+          Games.list_players!(query: [filter: [game_id: game.id]], authorize?: false),
+          &is_nil(&1.role)
+        )
 
       Games.update_player!(owner, %{alive: false})
 

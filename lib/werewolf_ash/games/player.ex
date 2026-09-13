@@ -7,7 +7,8 @@ defmodule WerewolfAsh.Games.Player do
   use Ash.Resource,
     otp_app: :werewolf_ash,
     domain: WerewolfAsh.Games,
-    data_layer: AshPostgres.DataLayer
+    data_layer: AshPostgres.DataLayer,
+    authorizers: [Ash.Policy.Authorizer]
 
   alias WerewolfAsh.Games.Player.Changes.ResolveGameByJoinCode
   alias WerewolfAsh.Games.Player.Validations.GameInLobby
@@ -20,6 +21,29 @@ defmodule WerewolfAsh.Games.Player do
 
     references do
       reference :game, on_delete: :delete
+    end
+  end
+
+  field_policies do
+    # rule 5 - a player's role is visible on their own seat; to a fellow
+    # werewolf seat, for a werewolf row; to anyone once the game has
+    # finished; and to any seat that has itself died ("the dead see
+    # everything"). Hidden in every other case.
+    field_policy :role do
+      authorize_if expr(user_id == ^actor(:id))
+
+      authorize_if expr(
+                     role == :werewolf and
+                       exists(game.players, user_id == ^actor(:id) and role == :werewolf)
+                   )
+
+      authorize_if expr(game.state == :finished)
+
+      authorize_if expr(exists(game.players, user_id == ^actor(:id) and not alive))
+    end
+
+    field_policy :* do
+      authorize_if always()
     end
   end
 
@@ -62,6 +86,21 @@ defmodule WerewolfAsh.Games.Player do
       primary? true
       require_atomic? false
       validate {GameInLobby, field: :game_id}
+    end
+  end
+
+  policies do
+    # rule 4 - a Player row is readable only while the reading actor
+    # themselves holds a seat, any role, alive or dead, in that row's game.
+    # `action_type(:read)` covers both the bare `:read` default and
+    # `:living_in_game`.
+    policy action_type(:read) do
+      authorize_if expr(exists(game.players, user_id == ^actor(:id)))
+    end
+
+    # rule 6 - every write action stays exactly as open as it is today.
+    policy action([:create, :join, :update, :destroy]) do
+      authorize_if always()
     end
   end
 

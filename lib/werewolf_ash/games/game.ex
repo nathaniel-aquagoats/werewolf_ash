@@ -17,6 +17,7 @@ defmodule WerewolfAsh.Games.Game do
     otp_app: :werewolf_ash,
     domain: WerewolfAsh.Games,
     data_layer: AshPostgres.DataLayer,
+    authorizers: [Ash.Policy.Authorizer],
     extensions: [AshStateMachine]
 
   alias WerewolfAsh.Games.Game.Changes.AdvancePhase
@@ -93,7 +94,7 @@ defmodule WerewolfAsh.Games.Game do
         :max_players
       ]
 
-      validate ActorIsOwner
+      validate ActorIsOwner, before_action?: true
       validate attribute_equals(:state, :lobby)
       validate PositivePlayerBounds
       validate MinNotAboveMax
@@ -114,7 +115,7 @@ defmodule WerewolfAsh.Games.Game do
         default &DateTime.utc_now/0
       end
 
-      validate ActorIsOwner
+      validate ActorIsOwner, before_action?: true
       validate MinimumPlayers
       validate RoleCompositionFits
 
@@ -159,6 +160,30 @@ defmodule WerewolfAsh.Games.Game do
       argument :winner, WerewolfAsh.Games.Game.Winner, allow_nil?: false
       change set_attribute(:winner, arg(:winner))
       change transition_state(:finished)
+    end
+  end
+
+  policies do
+    # rule 1 - a game is readable only while the actor holds a seat in it,
+    # any role, alive or dead. Read policies filter by default, so an actor
+    # with no seat (or no actor at all) gets nothing back, never a hard
+    # authorization error.
+    policy action_type(:read) do
+      authorize_if expr(exists(players, user_id == ^actor(:id)))
+    end
+
+    # rules 3a/3b - only the game's owner may start it or change its
+    # settings. Layered on top of ActorIsOwner's own validation, now
+    # `before_action?: true` above so this policy gets to decide first.
+    policy action([:start, :update_settings]) do
+      authorize_if relates_to_actor_via(:owner)
+    end
+
+    # rule 2 - every other Game action stays exactly as open as it is today;
+    # named explicitly so adding the authorizer does not silently
+    # default-deny them.
+    policy action([:create, :update, :destroy, :finish, :end_day, :end_night]) do
+      authorize_if always()
     end
   end
 

@@ -43,13 +43,17 @@ defmodule WerewolfAsh.Games.Action.Changes.ApplyKill do
   defp protected?(action, opts) do
     with {:ok, phase} <- Games.get_phase(action.phase_id, opts),
          {:ok, day_phase} <- preceding_day_phase(phase, opts) do
+      # Game rule, not an access check: whether the kill lands does not
+      # depend on whether the killing werewolf could themselves read the
+      # bodyguard's :protect row, which is narrowed to the bodyguard alone
+      # (werewolf_ash-27w.2 rule 8) - `opts`'s own actor is the werewolf who
+      # submitted the kill, not the bodyguard.
       protects =
         Games.list_actions!(
-          Keyword.merge(opts,
-            query: [
-              filter: [phase_id: day_phase.id, type: :protect, target_id: action.target_id]
-            ]
-          )
+          query: [
+            filter: [phase_id: day_phase.id, type: :protect, target_id: action.target_id]
+          ],
+          authorize?: false
         )
 
       protects != []

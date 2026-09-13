@@ -30,7 +30,7 @@ defmodule WerewolfAsh.Games.Reactors.ResolveWinTest do
 
     assert returned == game
 
-    reloaded = Games.get_game!(game.id)
+    reloaded = Games.get_game!(game.id, authorize?: false)
     assert reloaded.state == :lobby
     assert is_nil(reloaded.winner)
   end
@@ -41,7 +41,7 @@ defmodule WerewolfAsh.Games.Reactors.ResolveWinTest do
     # Rule 10 always deals at least one living werewolf; kill it to reach
     # the village-wins state without pinning which seat held the role.
     wolf =
-      Games.list_players!(query: [filter: [game_id: game.id]])
+      Games.list_players!(query: [filter: [game_id: game.id]], authorize?: false)
       |> Enum.find(&(&1.role == :werewolf))
 
     Games.update_player!(wolf, %{alive: false})
@@ -50,7 +50,7 @@ defmodule WerewolfAsh.Games.Reactors.ResolveWinTest do
 
     assert finished.state == :finished
     assert finished.winner == :village
-    assert Games.get_game!(game.id).winner == :village
+    assert Games.get_game!(game.id, authorize?: false).winner == :village
   end
 
   test "finishes the game for the wolves", %{game: game} do
@@ -59,7 +59,7 @@ defmodule WerewolfAsh.Games.Reactors.ResolveWinTest do
     # Kill non-wolves down to exactly one living non-wolf against the one
     # living wolf rule 10 always deals, without pinning specific seats.
     {[_wolf], non_wolves} =
-      Games.list_players!(query: [filter: [game_id: game.id]])
+      Games.list_players!(query: [filter: [game_id: game.id]], authorize?: false)
       |> Enum.split_with(&(&1.role == :werewolf))
 
     [_keep_alive | to_kill] = non_wolves
@@ -70,7 +70,7 @@ defmodule WerewolfAsh.Games.Reactors.ResolveWinTest do
 
     assert finished.state == :finished
     assert finished.winner == :wolves
-    assert Games.get_game!(game.id).state == :finished
+    assert Games.get_game!(game.id, authorize?: false).state == :finished
   end
 
   test "finish_game is what it calls", %{game: game} do

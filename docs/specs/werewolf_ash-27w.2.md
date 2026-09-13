@@ -1,5 +1,7 @@
 # werewolf_ash-27w.2: Policies on Games resources
 
+Implemented in PR #22.
+
 Depends on: none
 
 ## For the owner

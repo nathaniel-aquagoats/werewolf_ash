@@ -13,7 +13,8 @@ defmodule WerewolfAsh.Games.Action do
   use Ash.Resource,
     otp_app: :werewolf_ash,
     domain: WerewolfAsh.Games,
-    data_layer: AshPostgres.DataLayer
+    data_layer: AshPostgres.DataLayer,
+    authorizers: [Ash.Policy.Authorizer]
 
   alias WerewolfAsh.Games.Action.Changes.ApplyKill
   alias WerewolfAsh.Games.Action.Changes.RecordInvestigationResult
@@ -113,6 +114,46 @@ defmodule WerewolfAsh.Games.Action do
     update :update do
       primary? true
       accept [:result]
+    end
+  end
+
+  policies do
+    # rule 7 - a row's actor_id must name the caller's own seat, whether
+    # created via :create or qss.4's own :kill action.
+    policy action_type(:create) do
+      authorize_if expr(actor.user_id == ^actor(:id))
+    end
+
+    # rule 8 - a row is readable while the actor holds a seat, any role,
+    # alive or dead, in the row's phase's game, except: a :kill row also
+    # requires a werewolf seat; an :investigate row also requires the
+    # reading actor's own seat to be the row's own actor (the seer who cast
+    # it); a :protect row is narrowed the same way, to the bodyguard who
+    # cast it. None of these three narrowings apply once the reading
+    # actor's own seat in that game is dead - a dead reader sees every
+    # row, cast by or aimed at anyone, the same as :vote/:shoot rows are
+    # already visible to everyone with a seat.
+    policy action_type(:read) do
+      authorize_if expr(
+                     exists(phase.game.players, user_id == ^actor(:id) and not alive) or
+                       (exists(phase.game.players, user_id == ^actor(:id)) and
+                          (type not in [:kill, :investigate, :protect] or
+                             (type == :kill and
+                                exists(
+                                  phase.game.players,
+                                  user_id == ^actor(:id) and role == :werewolf
+                                )) or
+                             (type == :investigate and actor.user_id == ^actor(:id)) or
+                             (type == :protect and actor.user_id == ^actor(:id))))
+                   )
+    end
+
+    # rule 9 - :update (which records a result) stays exactly as open as it
+    # is today. :destroy is not named by any rule either (Assumption 5), so
+    # it stays open too, added explicitly so adding the authorizer does not
+    # silently default-deny it.
+    policy action([:update, :destroy]) do
+      authorize_if always()
     end
   end
 

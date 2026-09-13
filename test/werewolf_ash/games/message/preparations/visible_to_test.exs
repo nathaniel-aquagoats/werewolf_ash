@@ -15,7 +15,7 @@ defmodule WerewolfAsh.Games.Message.Preparations.VisibleToTest do
   setup do
     game = generate(game())
     villager = generate(player(game_id: game.id, role: :villager))
-    message = Games.send_message!(game.id, villager.id, :village, "hi")
+    message = Games.send_message!(game.id, villager.id, :village, "hi", authorize?: false)
 
     %{villager: villager, message: message}
   end
@@ -28,11 +28,11 @@ defmodule WerewolfAsh.Games.Message.Preparations.VisibleToTest do
   end
 
   test "narrows the query to what the given player may read", ctx do
-    assert [%{id: id}] = ctx.villager.id |> prepared_query() |> Ash.read!()
+    assert [%{id: id}] = ctx.villager.id |> prepared_query() |> Ash.read!(authorize?: false)
     assert id == ctx.message.id
   end
 
   test "an unrecognized player id matches nothing" do
-    assert UUID.generate() |> prepared_query() |> Ash.read!() == []
+    assert UUID.generate() |> prepared_query() |> Ash.read!(authorize?: false) == []
   end
 end

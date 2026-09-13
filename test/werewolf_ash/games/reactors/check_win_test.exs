@@ -103,7 +103,7 @@ defmodule WerewolfAsh.Games.Reactors.CheckWinTest do
 
       assert {:ok, {:wolves_wins, _}} = check(game)
 
-      game = Games.get_game!(game.id)
+      game = Games.get_game!(game.id, authorize?: false)
       assert game.state == :lobby
       assert is_nil(game.winner)
     end
