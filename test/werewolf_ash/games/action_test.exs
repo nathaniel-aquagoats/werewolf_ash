@@ -239,6 +239,10 @@ defmodule WerewolfAsh.Games.ActionTest do
          %{game: game, players: p} do
       day = current_phase(game)
       Games.create_action!(day.id, p.villager.id, p.werewolf.id, :vote)
+      # A second, opposing vote (werewolf_ash-qss.5 rules 2, 3) ties the day
+      # so this test's own single werewolf survives `end_day!` below; the
+      # rule's own behaviour is covered in resolve_lynch_test.exs.
+      Games.create_action!(day.id, p.werewolf.id, p.villager.id, :vote)
 
       assert %{type: :protect} =
                Games.create_action!(day.id, p.bodyguard.id, p.villager.id, :protect)
@@ -417,6 +421,10 @@ defmodule WerewolfAsh.Games.ActionTest do
 
       Games.create_action!(day.id, p.bodyguard.id, p.villager.id, :protect)
       Games.create_action!(day.id, p.villager.id, p.werewolf.id, :vote)
+      # A second, opposing vote (werewolf_ash-qss.5 rules 2, 3) ties the day
+      # so this test's own single werewolf survives `end_day!` below; the
+      # rule's own behaviour is covered in resolve_lynch_test.exs.
+      Games.create_action!(day.id, p.werewolf.id, p.villager.id, :vote)
 
       game = Games.end_day!(game, %{now: @dusk})
       night = current_phase(game)

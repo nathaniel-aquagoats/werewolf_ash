@@ -39,6 +39,7 @@ defmodule WerewolfAsh.Games do
     resource WerewolfAsh.Games.Phase do
       define :create_phase, action: :create, args: [:game_id, :kind, :number]
       define :update_phase, action: :update
+      define :destroy_phase, action: :destroy
       define :get_phase, action: :read, get_by: [:id]
       define :list_phases, action: :read
     end
