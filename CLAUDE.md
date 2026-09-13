@@ -114,9 +114,9 @@ Real-time (wall-clock day/night) werewolf game. Ash 3 domain is the source of tr
 
 ## Bead lifecycle
 
-Beads are specified locally, approved by merging a spec pull request, built one
-at a time by a claude.ai cloud routine that works through the approved specs,
-and merged by the reviewer that checked them. The old worktree-and-coordinator
+Beads are specified locally, approved by merging a spec pull request, built by
+a claude.ai cloud routine that works through the approved specs, up to two at
+a time, and merged by the reviewer that checked them. The old worktree-and-coordinator
 workflow is retired; `.claude/worktrees/` is no longer used.
 
 ```
@@ -172,12 +172,22 @@ and by hand through its API (`.claude/hooks/fire-routine.sh [<bead-id>]`). What 
 does is decided by `.claude/hooks/next-bead.py`, from `main` and the open pull
 requests:
 
-- **Paused** while any PR labelled `needs-human` is open, until the owner looks.
-- **Busy** while any `bead/*` PR is open: one bead at a time.
-- Otherwise it starts the **earliest-merged spec** that is not implemented and
-  whose `Depends on:` beads are all implemented. Implemented means `main` has
-  a commit subject starting `<bead-id>:`, which every bead squash has and so do
-  beads finished before this flow, or the spec is stamped `Implemented in PR #N.`
+- **Paused** for new starts while any PR labelled `needs-human` is open, until
+  the owner looks. Beads already running finish.
+- **Full** while two `bead/*` PRs are open: at most two beads run at once.
+- Otherwise it starts the **earliest-merged spec** that is not implemented,
+  whose `Depends on:` beads are all implemented, and that can run beside the
+  bead already running. Implemented means `main` has a commit subject starting
+  `<bead-id>:`, which every bead squash has and so do beads finished before
+  this flow, or the spec is stamped `Implemented in PR #N.`
+- **Two beads run together** only when neither depends on the other and their
+  specs' Touches sections name no common file under `lib/` or `priv/`.
+  Generated migrations and resource snapshots don't count, because a rebase
+  regenerates them. A spec whose Touches names no file is treated as touching
+  everything. A later spec may start ahead of an earlier one that conflicts.
+- Each run claims at most one bead. A merge, the daily run or a manual fire
+  fills a free slot, and `next-bead.py --claimed` settles two runs racing for
+  the same one.
 - **A named bead** skips queue order and nothing else, and resumes that bead's
   own open PR if it has one. When the owner says to implement a specific bead,
   or to retry a `needs-human` PR after looking at it, the coordinator runs
@@ -194,7 +204,8 @@ The routine's prompt is only a pointer; the orchestration is
 `.claude/skills/bead-pipeline/SKILL.md`, so it is versioned with the repo.
 
 - The orchestrator claims a bead by opening its PR, `<bead-id>: <title>` from
-  `bead/<bead-id>`, before any work, then stamps the spec on that branch with
+  `bead/<bead-id>`, before any work, confirms with `next-bead.py --claimed`
+  that no other run took the slot, then stamps the spec on that branch with
   the PR number.
 - `coder` (sonnet) implements the spec and only the spec, then pushes.
 - `code-reviewer` (opus) breaks each rule in a scratch copy to prove a test
@@ -204,7 +215,11 @@ The routine's prompt is only a pointer; the orchestration is
   sequence. Backgrounding does work — the session wakes when a subagent
   finishes — but the run must never end with the PR open and unreviewed.
 - One retry on rejection. Then the PR is labelled `needs-human`, left open, and
-  the queue pauses.
+  new starts pause.
+- A rebase conflict because another bead merged first is not a rejection: the
+  reviewer reports it, the coder rebases and regenerates, and the reviewer
+  looks again. It does not use the retry; after two such hand-backs the PR
+  goes to `needs-human`.
 - Never a direct push to `main`.
 
 **GitHub in the cloud is split.** Reads (`gh pr list`, `git fetch`) and
@@ -247,7 +262,7 @@ All under `.claude/hooks/`. Tests: `bash .claude/hooks/test-hooks.sh`.
 | `gates.sh` | hook: `git push`, and `coder` finishing | `mix compile --warnings-as-errors`, `mix ash.codegen --check`, `mix lint`, `mix test`; exit 2 with the failing tail |
 | `protect-pipeline.py` | hook: Edit/Write/Bash | Refuses subagent writes to `.claude/`, `.beads/`, `CLAUDE.md`, `AGENTS.md`, `.credo.exs`, `.formatter.exs`, and to `docs/specs/` unless the subagent is `spec-author`. A named teammate reports its name, not its type, so **name spec-author teammates `spec-author-<suffix>`** or they cannot write specs. The main session is unaffected |
 | `session-start.sh` | hook: SessionStart | Starts Postgres, runs `sync-beads.sh`, runs `bd prime` |
-| `next-bead.py` | cloud orchestrator; sync report | Prints the queue's decision: `next`, `continue`, `paused`, `busy`, `idle`, or why a named bead can't start |
+| `next-bead.py` | cloud orchestrator; sync report | Prints the queue's decision: `next`, `continue`, `won`/`lost`, `paused`, `full`, `idle`, or why a named bead can't start |
 | `fire-routine.sh` | coordinator, by hand | Starts the routine, optionally naming a bead |
 
 ### Secrets and configuration

@@ -129,8 +129,14 @@ specify the contract.
 
 ### Touches
 
-Advisory. The coder may deviate. Say so in the file so no one treats it as a
-constraint.
+Advisory for the coder, which may deviate. Say so in the file so no one treats
+it as a constraint on the implementation.
+
+The queue does read it strictly. Two beads run at the same time only when their
+Touches sections name no common file under `lib/` or `priv/`, and a Touches that
+names no file at all is treated as touching everything. So list every source
+file the rules will change, by path. A missed file lets two conflicting beads
+run side by side; an extra one only makes a bead wait.
 
 Include the **existing tests a rule will break**, not just the files being
 written. Grep for callers and for assertions that depend on the behaviour a

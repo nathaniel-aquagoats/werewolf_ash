@@ -73,6 +73,8 @@ Work through all seven. For each, say `pass` or give findings.
    change to a settled rule in `CLAUDE.md` that the rules imply. The owner
    approves by merging, and merging accepts the card, so a gameplay decision or
    rule change missing from the card is blocking. Wording and length are nits.
+   A `lib/` file the rules plainly change but Touches omits is a nit: the queue
+   uses Touches paths to decide which beads may run at the same time.
 
 ## Severity
 

@@ -12,7 +12,7 @@
 #
 # Naming a bead skips queue order and nothing else: the routine still refuses a
 # bead with no merged spec or with unmerged dependencies, and still starts
-# nothing while a different bead is in flight. The routine's saved prompt acts
+# nothing when two beads are running or the bead shares files with one that is. The routine's saved prompt acts
 # on exactly one line of fire text, "bead: <bead-id>"; fire text otherwise
 # arrives labelled as untrusted and is ignored.
 #

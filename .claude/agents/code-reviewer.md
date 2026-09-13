@@ -113,7 +113,8 @@ line, then nits.
 
 ### If it passes
 
-1. `git rebase main` (or `git pull --rebase origin main`).
+1. `git fetch origin && git rebase origin/main`. If it conflicts, see
+   "If the rebase conflicts" below.
 2. Re-run all four gates. A rebase can break a green branch, and this is the
    state that lands.
 3. Merge with the **GitHub MCP tool**, not the `gh` CLI:
@@ -140,7 +141,13 @@ every bead that depends on it.
 
 Post the review and stop. Do not merge. Do not fix it yourself.
 
-If a rebase conflicts, do not resolve it: label the PR `needs-human` and stop.
+### If the rebase conflicts
+
+Beads run in parallel, so another bead merging while you review is normal.
+Do not resolve the conflict and do not label the PR. Run `git rebase --abort`
+and reply `rebase conflict` with the list of conflicting files. That is not a
+rejection: the orchestrator sends the branch back to the coder to rebase, and
+then you review again.
 
 ## Re-read before a second pass
 

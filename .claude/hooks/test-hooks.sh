@@ -120,30 +120,37 @@ commit() {
   local d="$((1767225600 + n * 60)) +0000"
   GIT_AUTHOR_DATE="$d" GIT_COMMITTER_DATE="$d" g commit -q --allow-empty -m "$1"
 }
+# spec <id> <header> <touches body>
 spec() {
   mkdir -p "$R/docs/specs"
-  printf '# %s: a title\n\n%s\n\n## Goal\nx\n' "$1" "$2" >"$R/docs/specs/$1.md"
+  printf '# %s: a title\n\n%s\n\n## Goal\nx\n\n## Touches\nAdvisory only.\n%s\n' "$1" "$2" "$3" >"$R/docs/specs/$1.md"
   g add "docs/specs/$1.md"
   commit "spec($1): a title"
 }
+prs() { printf '%s' "$1" >"$PRS"; }
+pr() { printf '{"number":%s,"title":"%s: x","headRefName":"bead/%s","labels":[%s]}' "$1" "$2" "$2" "${3:-}"; }
 nb() { (cd "$R" && NEXT_BEAD_REF=HEAD NEXT_BEAD_NO_FETCH=1 NEXT_BEAD_OPEN_PRS="$PRS" python3 "$NB" "$@" >/tmp/nb.out 2>&1; echo $?); }
 first() { head -1 /tmp/nb.out; }
 has() { grep -qx "$1" /tmp/nb.out && echo yes || echo no; }
 
 g init -q
 commit "werewolf_ash-aaa.1: a bead finished before specs lived on main (#1)"
-spec werewolf_ash-bbb.1 "Depends on: werewolf_ash-ccc.1"
-spec werewolf_ash-ccc.1 "Depends on: werewolf_ash-aaa.1"
-spec werewolf_ash-ddd.1 "Depends on: none"
-spec werewolf_ash-eee.1 "No dependency line at all"
+spec werewolf_ash-bbb.1 "Depends on: werewolf_ash-ccc.1" "- lib/werewolf_ash/b.ex"
+spec werewolf_ash-ccc.1 "Depends on: werewolf_ash-aaa.1" "- \`lib/werewolf_ash/shared.ex:12\`"
+spec werewolf_ash-ddd.1 "Depends on: none" "- lib/werewolf_ash/shared.ex, test/werewolf_ash/d_test.exs"
+spec werewolf_ash-eee.1 "No dependency line at all" "- lib/werewolf_ash/e.ex"
 spec werewolf_ash-fff.1 "Depends on: none
 
-Implemented in PR #9."
+Implemented in PR #9." "- lib/werewolf_ash/f.ex"
+spec werewolf_ash-iii.1 "Depends on: none" "- lib/werewolf_ash/i.ex
+- priv/resource_snapshots/repo/games/shared.json"
+spec werewolf_ash-jjj.1 "Depends on: none" "Nothing specific yet."
+spec werewolf_ash-kkk.1 "Depends on: none" "- \`test/werewolf_ash/games/action_test.exs\` only"
 printf '# Specs\n' >"$R/docs/specs/README.md"
 g add docs/specs/README.md
 commit "docs: specs readme"
 printf '# werewolf_ash-ggg.1: t\n\nDepends on: none\n' >"$R/docs/specs/werewolf_ash-ggg.1.md"
-echo '[]' >"$PRS"
+prs '[]'
 
 ok 0 "$(nb)" "a ready spec is picked"
 ok "next werewolf_ash-ccc.1" "$(first)" "earliest-merged ready spec wins; one with an unmerged dependency is skipped"
@@ -163,27 +170,57 @@ ok 0 "$(nb --check werewolf_ash-ddd.1)" "a named ready bead starts out of queue 
 ok "next werewolf_ash-ddd.1" "$(first)" "and is the one named"
 ok 1 "$(nb --check 'not a bead')" "a malformed argument is an error"
 
+# One bead running: a second may start beside it only if they share no source file.
+prs "[$(pr 5 werewolf_ash-ccc.1)]"
+ok 0 "$(nb)" "a second bead may start while one is running"
+ok "next werewolf_ash-iii.1" "$(first)" "a later spec with no shared source file starts ahead of an earlier one that conflicts"
+ok yes "$(has 'running werewolf_ash-ccc.1 #5')" "the running bead is listed"
+ok yes "$(has 'conflicts werewolf_ash-ddd.1 with werewolf_ash-ccc.1: lib/werewolf_ash/shared.ex')" "a shared lib file is a conflict, named"
+ok yes "$(has 'conflicts werewolf_ash-jjj.1 with werewolf_ash-ccc.1: (files unknown)')" "a spec whose Touches names no file conflicts with everything"
+ok yes "$(has 'queued werewolf_ash-kkk.1')" "a test-only spec shares no source file, so it can run beside anything"
+ok 3 "$(nb --check werewolf_ash-ddd.1)" "a named bead that conflicts with a running one does not start"
+ok "conflicts werewolf_ash-ddd.1 with werewolf_ash-ccc.1: lib/werewolf_ash/shared.ex" "$(first)" "and says with what"
+ok 0 "$(nb --check werewolf_ash-ccc.1)" "naming a running bead resumes its own PR"
+ok "continue #5" "$(first)" "resume names the PR"
+ok 0 "$(nb --claimed werewolf_ash-ccc.1)" "the only claim wins"
+ok "won #5" "$(first)" "won names the PR"
+
+# Two running: the queue is full.
+prs "[$(pr 5 werewolf_ash-ccc.1),$(pr 6 werewolf_ash-iii.1)]"
+ok 3 "$(nb)" "two running beads fill the queue"
+ok "full #5, #6" "$(first)" "full names both PRs"
+ok 3 "$(nb --check werewolf_ash-ddd.1)" "a named bead cannot start when the queue is full"
+ok 0 "$(nb --claimed werewolf_ash-iii.1)" "a claim beside one non-conflicting earlier PR wins"
+
+# Races: a claim loses to earlier PRs that already fill the slots or conflict with it.
+prs "[$(pr 5 werewolf_ash-ccc.1),$(pr 6 werewolf_ash-iii.1),$(pr 7 werewolf_ash-ddd.1)]"
+ok 3 "$(nb --claimed werewolf_ash-ddd.1)" "a third claim loses"
+ok "lost #7 to #5, #6" "$(first)" "and names the PRs that hold the slots"
+prs "[$(pr 5 werewolf_ash-ccc.1),$(pr 6 werewolf_ash-ddd.1)]"
+ok 3 "$(nb --claimed werewolf_ash-ddd.1)" "a claim that conflicts with an earlier PR loses"
+ok "lost #6 to #5 (werewolf_ash-ccc.1: lib/werewolf_ash/shared.ex)" "$(first)" "and says why"
+ok 1 "$(nb --claimed werewolf_ash-bbb.1)" "claiming with no open PR is an error"
+
+# A running bead with no spec on main might touch anything.
+prs "[$(pr 9 werewolf_ash-zzz.1)]"
+ok 3 "$(nb)" "nothing starts beside a running bead whose files are unknown"
+ok "idle" "$(first)" "that is idle, not full"
+
+# needs-human stops new starts but not the beads already running.
+prs "[$(pr 4 werewolf_ash-ccc.1 '{"name":"needs-human"}')]"
+ok 3 "$(nb)" "a needs-human PR pauses new starts"
+ok "paused #4 werewolf_ash-ccc.1: x" "$(first)" "the pause names the PR"
+ok 0 "$(nb --check werewolf_ash-ccc.1)" "naming the stuck bead resumes its own PR"
+
+prs '[{"number":6,"title":"spec(werewolf_ash-hhh.1): x","headRefName":"spec/werewolf_ash-hhh.1","labels":[]}]'
+ok 0 "$(nb)" "an open spec PR does not occupy a slot"
+
+prs '[]'
 commit "werewolf_ash-ccc.1: the dependency lands (#10)"
 ok 0 "$(nb)" "a merged dependency releases the waiting spec"
 ok "next werewolf_ash-bbb.1" "$(first)" "which goes ahead of later specs, in merge order"
 
-printf '[{"number":4,"title":"werewolf_ash-ddd.1: x","headRefName":"bead/werewolf_ash-ddd.1","labels":[{"name":"needs-human"}]}]' >"$PRS"
-ok 3 "$(nb)" "a needs-human PR pauses the queue"
-ok "paused #4 werewolf_ash-ddd.1: x" "$(first)" "the pause names the PR"
-ok 0 "$(nb --check werewolf_ash-ddd.1)" "naming the stuck bead resumes its own PR"
-ok "continue #4" "$(first)" "resume names the PR"
-
-printf '[{"number":5,"title":"werewolf_ash-ddd.1: x","headRefName":"bead/werewolf_ash-ddd.1","labels":[]}]' >"$PRS"
-ok 3 "$(nb)" "an open bead PR means the queue is busy"
-ok "busy #5 bead/werewolf_ash-ddd.1" "$(first)" "busy names the branch"
-ok 3 "$(nb --check werewolf_ash-bbb.1)" "a different named bead cannot start while one is in flight"
-
-printf '[{"number":6,"title":"spec(werewolf_ash-hhh.1): x","headRefName":"spec/werewolf_ash-hhh.1","labels":[]}]' >"$PRS"
-ok 0 "$(nb)" "an open spec PR does not block the queue"
-
-echo '[]' >"$PRS"
-commit "werewolf_ash-bbb.1: done (#11)"
-commit "werewolf_ash-ddd.1: done (#12)"
+for b in bbb ddd iii jjj kkk; do commit "werewolf_ash-$b.1: done"; done
 ok 3 "$(nb)" "nothing ready is idle"
 ok "idle" "$(first)" "idle says so"
 
