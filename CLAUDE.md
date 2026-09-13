@@ -122,7 +122,7 @@ workflow is retired; `.claude/worktrees/` is no longer used.
 ```
 grill the owner -> spec-author -> spec-reviewer -> spec PR -> owner merges it
                                                                     |
-      queue (any PR closing, daily, or by hand) -> coder -> code-reviewer -> merge
+      queue (any PR closing, every 12h, or by hand) -> coder -> code-reviewer -> merge
                                                                     |
                                                SessionStart sync closes the bead
 ```
@@ -167,8 +167,8 @@ grill the owner -> spec-author -> spec-reviewer -> spec PR -> owner merges it
 
 ### The queue
 
-The routine runs whenever a pull request closes (merged or not), once a day,
-and by hand through its API (`.claude/hooks/fire-routine.sh [<bead-id>]`). What a run
+Runs start whenever a pull request closes (merged or not), every 12 hours, and
+by hand through the API (`.claude/hooks/fire-routine.sh [<bead-id>]`). What a run
 does is decided by `.claude/hooks/next-bead.py`, from `main` and the open pull
 requests:
 
@@ -185,8 +185,8 @@ requests:
   Generated migrations and resource snapshots don't count, because a rebase
   regenerates them. A spec whose Touches names no file is treated as touching
   everything. A later spec may start ahead of an earlier one that conflicts.
-- Each run claims at most one bead. A merge, the daily run or a manual fire
-  fills a free slot, and `next-bead.py --claimed` settles two runs racing for
+- Each run claims at most one bead. A merge, a scheduled sweep or a manual
+  fire fills a free slot, and `next-bead.py --claimed` settles two runs racing for
   the same one.
 - **A named bead** skips queue order and nothing else, and resumes that bead's
   own open PR if it has one. When the owner says to implement a specific bead,
@@ -271,15 +271,21 @@ All under `.claude/hooks/`. Tests: `bash .claude/hooks/test-hooks.sh`.
 (`set -Ux ROUTINE_ID trig_...`), never in the repo and never in chat.
 `fire-routine.sh` reads them from the environment and refuses if they are unset.
 
-Two routines run the same saved prompt and configuration: Sonnet, the
+Four routines run the same saved prompt and configuration: Sonnet, the
 `Agent` and `Skill` tools (the orchestrator dispatches the coder and reviewer
 as subagents), no connectors, and no pinned output branch.
 
 - **"Coding after Spec Accepted"** has the GitHub trigger on pull requests
   closing. It needs the Claude GitHub App installed on the repository.
-- **"Spec implementation Routine"** has the daily schedule at 15:00 UTC and the
-  API trigger that `fire-routine.sh` uses. Never give it a GitHub trigger too,
-  or every merge starts two runs.
+- **"Queue sweep A (every 12h)"** runs at 03:00 and 15:00 UTC, and **"Queue
+  sweep B (every 12h, +10 min)"** at 03:10 and 15:10 UTC (9am and 9pm Denver
+  during daylight saving). Each run claims one bead, so the second sweep fills
+  the second slot once the first has claimed its bead, or stops. Routine
+  stagger can shift either by a few minutes; `next-bead.py --claimed` covers
+  any overlap. Four runs a day against the routine cap.
+- **"Spec implementation Routine"** has only the API trigger that
+  `fire-routine.sh` uses. Never give it a GitHub trigger or a schedule too, or
+  runs double up.
 
 A routine created in the claude.ai form attaches every connector and pins a
 `claude/...` output branch by default; clear both, and check `Agent` and

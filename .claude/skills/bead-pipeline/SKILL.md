@@ -37,7 +37,7 @@ them; that is not your problem and not a failure to report.
 ## Where the work comes from
 
 A run starts when any pull request closes (usually a merge into `main`), on
-the daily schedule, or when the maintainer fires the routine by hand. None of those carries the work.
+the 12-hour sweep schedule, or when the maintainer fires the routine by hand. None of those carries the work.
 The work is in the repository:
 
 - **An approved spec** is a file `docs/specs/<bead-id>.md` on `main`. The owner
