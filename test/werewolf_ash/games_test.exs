@@ -472,6 +472,19 @@ defmodule WerewolfAsh.GamesTest do
       refute Enum.any?(game_phases, &is_nil(&1.ended_at))
       refute Enum.any?(game_phases, &(&1.kind == :night))
     end
+
+    test "a lynched hunter dies like any other target: no hunter window, straight to night (rule 11)" do
+      %{game: game, players: p} = started_day_game()
+      day = open_day_phase(game)
+
+      Games.create_action!(day.id, p.seer.id, p.hunter.id, :vote)
+      Games.create_action!(day.id, p.bodyguard.id, p.hunter.id, :vote)
+
+      game = Games.end_day!(game, %{now: ~U[2026-06-15 20:00:00Z]})
+
+      assert Games.get_player!(p.hunter.id).alive == false
+      assert game.state == :night
+    end
   end
 
   describe "players" do

@@ -29,7 +29,7 @@ defmodule WerewolfAsh.Games.Game.Changes.ResolveDayVoteTest do
   defp stage_hooks(game, now) do
     changeset = Changeset.for_update(game, :end_day, %{now: now}, authorize?: false)
     assert changeset.valid?
-    assert [advance_hook, resolve_hook] = changeset.after_action
+    assert [advance_hook, resolve_hook | _] = changeset.after_action
     {changeset, advance_hook, resolve_hook}
   end
 
