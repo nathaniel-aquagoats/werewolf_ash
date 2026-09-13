@@ -6,11 +6,11 @@ Depends on: none
 
 **What changes.** When a werewolf's kill lands, the game immediately checks whether that death brings the werewolves to parity with everyone else. If so, the game ends right then, in the middle of the night — nobody has to wait for morning. If the kill was blocked (a protected target) or doesn't finish things, the night keeps going, and the next day starts with nothing left over to resolve.
 
-**Decisions for you.**
-1. A hunter killed at night — a plain death now, or their revenge shot fires right away? **Recommended:** plain death for now; the shot (qss.7) is a follow-up bead landing right after this one.
-2. Anything announced when a kill finishes the game mid-night? **Recommended:** no — announcements (qss.19) are a separate bead; this one only changes game state.
-3. Night ends with no kill (wolves didn't act, or the kill was blocked)? **Recommended:** nothing to resolve; day starts as normal.
-4. Should the scheduler try to force a dawn transition on a game that already finished mid-night? **Recommended:** no — a finished game is left alone; that requirement is recorded on the scheduler bead (qss.9), not built here.
+**Decisions.**
+1. A hunter killed at night — a plain death now, or their revenge shot fires right away? **Decided:** plain death for now; the shot (qss.7) is a follow-up bead landing right after this one.
+2. Anything announced when a kill finishes the game mid-night? **Decided:** no — announcements (qss.19) are a separate bead; this one only changes game state.
+3. Night ends with no kill (wolves didn't act, or the kill was blocked)? **Decided:** nothing to resolve; day starts as normal.
+4. Should the scheduler try to force a dawn transition on a game that already finished mid-night? **Decided:** no — a finished game is left alone; that requirement is recorded on the scheduler bead (qss.9), not built here.
 
 **Rule changes.** Extends the settled rule on the wolf kill ("...the victim dies immediately unless the bodyguard protected them that day, in which case the kill is spent and they survive"): a kill that lands is followed at once by a win check; if it brings the wolves to parity, the game ends immediately, mid-night, without waiting for the night to end. A spent (protected) kill runs no win check at all.
 
