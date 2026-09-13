@@ -278,18 +278,21 @@ as subagents), no connectors, and no pinned output branch.
 - **"Coding after Spec Accepted"** has the GitHub trigger on pull requests
   closing. It needs the Claude GitHub App installed on the repository.
 - **"Queue sweep A (every 12h)"** runs at 03:00 and 15:00 UTC, and **"Queue
-  sweep B (every 12h, +10 min)"** at 03:10 and 15:10 UTC (9am and 9pm Denver
+  sweep B (every 12h, +25 min)"** at 03:25 and 15:25 UTC (9am and 9pm Denver
   during daylight saving). Each run claims one bead, so the second sweep fills
-  the second slot once the first has claimed its bead, or stops. Routine
-  stagger can shift either by a few minutes; `next-bead.py --claimed` covers
-  any overlap. Four runs a day against the routine cap.
+  the second slot once the first has claimed its bead, or stops. The gap is
+  25 minutes, not 10, because routine stagger delayed sweep A by about seven
+  minutes; two runs deciding at the same moment pick the same bead, and the
+  loser stops without taking the other slot. Four runs a day against the
+  routine cap.
 - **"Spec implementation Routine"** has only the API trigger that
   `fire-routine.sh` uses. Never give it a GitHub trigger or a schedule too, or
   runs double up.
 
 A routine created in the claude.ai form attaches every connector and pins a
-`claude/...` output branch by default; clear both, and check `Agent` and
-`Skill` are allowed. Duplicate runs are safe, since `next-bead.py --claimed`
+`claude/...` output branch by default, and one created through the API
+attaches every connector too; clear them (`clear_mcp_connections: true`), clear
+the branch, and check `Agent` and `Skill` are allowed. Duplicate runs are safe, since `next-bead.py --claimed`
 settles races, but they spend the daily cap. When attaching a GitHub trigger
 through `RemoteTrigger` `create_webhook_trigger`, the body that validates is
 `{"routine_trigger_id": "trig_...", "source": "github", "hook_type": "app",
