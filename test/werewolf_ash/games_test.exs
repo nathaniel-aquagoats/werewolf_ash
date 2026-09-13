@@ -7,6 +7,11 @@ defmodule WerewolfAsh.GamesTest do
   alias AshStateMachine.Errors.NoMatchingTransition
   alias WerewolfAsh.Games
 
+  # A stand-in actor is enough for ActorIsOwner, which only compares `id`.
+  defp update_settings!(game, params) do
+    Games.update_game_settings!(game, params, actor: %{id: game.owner_id})
+  end
+
   describe "games" do
     test "creates a game with players through the code interface" do
       owner = generate(user())
@@ -371,7 +376,7 @@ defmodule WerewolfAsh.GamesTest do
     test "requires at least 5 seated players" do
       owner = generate(user())
       game = generate(game(owner_id: owner.id))
-      generate_many(player(game_id: game.id), 2)
+      generate_many(player(game_id: game.id), 3)
 
       assert {:error, %Ash.Error.Invalid{errors: [error]}} =
                Games.start_game(game, %{}, actor: owner)
@@ -504,6 +509,38 @@ defmodule WerewolfAsh.GamesTest do
       assert %{id: bob_player_id} = Games.add_player!(game.id, bob.id)
       assert alice_player_id != bob_player_id
     end
+
+    test "accepts add_player below max_players (rule 16)", %{game: game} do
+      game = update_settings!(game, %{max_players: 4, min_players: 4})
+      alice = generate(user())
+
+      assert %{user_id: user_id} = Games.add_player!(game.id, alice.id)
+      assert user_id == alice.id
+    end
+
+    test "refuses add_player once max_players is already seated (rule 16)", %{game: game} do
+      game = update_settings!(game, %{max_players: 4, min_players: 4})
+      # game() already seats the owner, so 3 more reaches the cap of 4.
+      generate_many(player(game_id: game.id), 3)
+      alice = generate(user())
+
+      assert {:error, %Ash.Error.Invalid{errors: errors}} = Games.add_player(game.id, alice.id)
+
+      assert Enum.any?(
+               errors,
+               &match?(%Ash.Error.Changes.InvalidAttribute{field: :game_id}, &1)
+             )
+
+      assert Games.list_players!(query: [filter: [game_id: game.id]]) |> length() == 4
+    end
+
+    test "add_player is never refused on max_players when it is nil", %{game: game} do
+      generate_many(player(game_id: game.id), 10)
+      alice = generate(user())
+
+      assert %{user_id: user_id} = Games.add_player!(game.id, alice.id)
+      assert user_id == alice.id
+    end
   end
 
   describe "join_game" do
@@ -588,6 +625,239 @@ defmodule WerewolfAsh.GamesTest do
                Games.join_game(game.join_code, user.id)
 
       assert %Ash.Error.Changes.InvalidAttribute{field: :game_id} = error
+    end
+
+    test "accepts a join below max_players (rule 11)" do
+      game = generate(game())
+      game = update_settings!(game, %{max_players: 4, min_players: 4})
+      user = generate(user())
+
+      assert %{user_id: user_id} = Games.join_game!(game.join_code, user.id)
+      assert user_id == user.id
+    end
+
+    test "refuses a join once max_players is already seated (rule 11)" do
+      game = generate(game())
+      game = update_settings!(game, %{max_players: 4, min_players: 4})
+      # game() already seats the owner, so 3 more reaches the cap of 4.
+      generate_many(player(game_id: game.id), 3)
+      user = generate(user())
+
+      assert {:error, %Ash.Error.Invalid{errors: [error]}} =
+               Games.join_game(game.join_code, user.id)
+
+      assert %Ash.Error.Changes.InvalidArgument{field: :join_code} = error
+      assert Games.list_players!(query: [filter: [game_id: game.id]]) |> length() == 4
+    end
+
+    test "a join is never refused on max_players when it is nil" do
+      game = generate(game())
+      generate_many(player(game_id: game.id), 10)
+      user = generate(user())
+
+      assert %{user_id: user_id} = Games.join_game!(game.join_code, user.id)
+      assert user_id == user.id
+    end
+  end
+
+  describe "update_game_settings" do
+    test "the owner may change any subset of the seven settings while in :lobby" do
+      owner = generate(user())
+      game = generate(game(owner_id: owner.id))
+
+      updated =
+        Games.update_game_settings!(game, %{seer_enabled: false, max_players: 6}, actor: owner)
+
+      assert updated.seer_enabled == false
+      assert updated.max_players == 6
+      # every other setting is left at its default
+      assert updated.role_distribution_mode == :automatic
+      assert updated.bodyguard_enabled == true
+      assert updated.hunter_enabled == true
+      assert updated.min_players == 5
+    end
+
+    test "rejects a caller other than the game's own owner (rule 2)" do
+      owner = generate(user())
+      stranger = generate(user())
+      game = generate(game(owner_id: owner.id))
+
+      assert {:error, %Ash.Error.Invalid{errors: [error]}} =
+               Games.update_game_settings(game, %{max_players: 6}, actor: stranger)
+
+      assert %Ash.Error.Changes.InvalidAttribute{field: :owner_id} = error
+      assert is_nil(Games.get_game!(game.id, authorize?: false).max_players)
+    end
+
+    test "rejects a change once the game has already left the lobby (rule 3)" do
+      %{game: game, owner: owner} = ready()
+      game = Games.start_game!(game, actor: owner)
+
+      assert {:error, %Ash.Error.Invalid{errors: [error]}} =
+               Games.update_game_settings(game, %{max_players: 10}, actor: owner)
+
+      assert %Ash.Error.Changes.InvalidAttribute{field: :state} = error
+    end
+
+    test "rejects nil for any of the five non-nullable settings (rule 1)" do
+      owner = generate(user())
+      game = generate(game(owner_id: owner.id))
+
+      assert {:error, %Ash.Error.Invalid{}} =
+               Games.update_game_settings(game, %{role_distribution_mode: nil}, actor: owner)
+    end
+
+    test "rejects an attribute outside the seven settings, e.g. name" do
+      owner = generate(user())
+      game = generate(game(owner_id: owner.id))
+
+      assert {:error, %Ash.Error.Invalid{}} =
+               Games.update_game_settings(game, %{name: "Renamed"}, actor: owner)
+    end
+
+    test "enforces rules 4-7 through the action" do
+      owner = generate(user())
+      game = generate(game(owner_id: owner.id))
+
+      assert has_error?(
+               Games.update_game_settings(game, %{min_players: 0}, actor: owner),
+               :min_players
+             )
+
+      assert has_error?(
+               Games.update_game_settings(game, %{max_players: 0}, actor: owner),
+               :max_players
+             )
+
+      assert has_error?(
+               Games.update_game_settings(game, %{min_players: 10, max_players: 5}, actor: owner),
+               :max_players
+             )
+
+      assert has_error?(
+               Games.update_game_settings(game, %{role_distribution_mode: :manual}, actor: owner),
+               :manual_werewolf_count
+             )
+
+      assert has_error?(
+               Games.update_game_settings(
+                 game,
+                 %{min_players: 1, max_players: 3},
+                 actor: owner
+               ),
+               :max_players
+             )
+
+      assert has_error?(
+               Games.update_game_settings(
+                 game,
+                 %{
+                   role_distribution_mode: :manual,
+                   manual_werewolf_count: 5,
+                   min_players: 1,
+                   max_players: 4
+                 },
+                 actor: owner
+               ),
+               :max_players
+             )
+    end
+
+    test "rule 17: refuses to set max_players below the seated count" do
+      owner = generate(user())
+      game = generate(game(owner_id: owner.id))
+      # game() already seats the owner, so 2 more reaches 3 total.
+      generate_many(player(game_id: game.id), 2)
+
+      assert {:error, %Ash.Error.Invalid{errors: [error]}} =
+               Games.update_game_settings(
+                 game,
+                 %{
+                   max_players: 2,
+                   min_players: 1,
+                   seer_enabled: false,
+                   bodyguard_enabled: false,
+                   hunter_enabled: false
+                 },
+                 actor: owner
+               )
+
+      assert %Ash.Error.Changes.InvalidAttribute{field: :max_players} = error
+
+      assert Games.list_players!(query: [filter: [game_id: game.id]]) |> length() == 3
+      reloaded = Games.get_game!(game.id, authorize?: false)
+      assert reloaded.max_players == game.max_players
+      assert reloaded.min_players == game.min_players
+      assert reloaded.seer_enabled == game.seer_enabled
+    end
+
+    test "rule 17: setting max_players exactly equal to the seated count is allowed" do
+      owner = generate(user())
+      game = generate(game(owner_id: owner.id))
+      generate_many(player(game_id: game.id), 2)
+
+      updated =
+        Games.update_game_settings!(
+          game,
+          %{
+            max_players: 3,
+            min_players: 3,
+            seer_enabled: false,
+            bodyguard_enabled: false,
+            hunter_enabled: false
+          },
+          actor: owner
+        )
+
+      assert updated.max_players == 3
+    end
+
+    test "rule 17: max_players left nil is never refused on this ground" do
+      owner = generate(user())
+      game = generate(game(owner_id: owner.id))
+      generate_many(player(game_id: game.id), 10)
+
+      updated = Games.update_game_settings!(game, %{seer_enabled: false}, actor: owner)
+      assert is_nil(updated.max_players)
+    end
+
+    defp has_error?({:error, %Ash.Error.Invalid{errors: errors}}, field) do
+      Enum.any?(errors, &match?(%Ash.Error.Changes.InvalidAttribute{field: ^field}, &1))
+    end
+  end
+
+  describe "end to end: owner-configured role composition" do
+    test "manual mode with a disabled seer deals exactly the configured composition" do
+      owner = generate(user())
+
+      game =
+        Games.create_game!(%{
+          name: "Manual Mode",
+          join_code: "MANL#{System.unique_integer([:positive])}",
+          owner_id: owner.id
+        })
+
+      game =
+        Games.update_game_settings!(
+          game,
+          %{role_distribution_mode: :manual, manual_werewolf_count: 2, seer_enabled: false},
+          actor: owner
+        )
+
+      [alice, bob, carol, dave] = generate_many(user(), 4)
+      Games.join_game!(game.join_code, alice.id)
+      Games.join_game!(game.join_code, bob.id)
+      Games.add_player!(game.id, carol.id)
+      Games.add_player!(game.id, dave.id)
+
+      game = Games.start_game!(game, actor: owner)
+
+      roles =
+        Games.list_players!(query: [filter: [game_id: game.id]])
+        |> Enum.map(& &1.role)
+        |> Enum.frequencies()
+
+      assert roles == %{bodyguard: 1, hunter: 1, werewolf: 2, villager: 1}
     end
   end
 

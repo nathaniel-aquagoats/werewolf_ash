@@ -12,6 +12,7 @@ defmodule WerewolfAsh.Games do
     resource WerewolfAsh.Games.Game do
       define :create_game, action: :create
       define :update_game, action: :update
+      define :update_game_settings, action: :update_settings
       define :finish_game, action: :finish, args: [:winner]
       define :destroy_game, action: :destroy
       define :get_game, action: :read, get_by: [:id]
