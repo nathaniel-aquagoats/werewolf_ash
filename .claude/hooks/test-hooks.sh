@@ -67,6 +67,10 @@ ok 0 "$(runpy $P "$(j_bash coder 'mix test')")" "subagent may run tests"
 ok 0 "$(runpy $P "$(j_bash coder 'git push -u origin bead/x')")" "subagent may push"
 ok 2 "$(runpy $P "$(j_bash coder "sed -i '' s/a/b/ docs/specs/werewolf_ash-qss.5.md")")" "coder in-place sed on a spec is refused"
 ok 0 "$(runpy $P "$(j_bash coder 'cat docs/specs/werewolf_ash-qss.5.md')")" "coder may read its spec"
+ok 0 "$(runpy $P "$(j_bash spec-reviewer-x 'git show origin/spec/a-b.1:docs/specs/a-b.1.md > /tmp/old.md && diff /tmp/old.md docs/specs/a-b.1.md')")" "reading a spec into /tmp is not a write to the spec"
+ok 2 "$(runpy $P "$(j_bash coder 'cat /tmp/x > docs/specs/werewolf_ash-qss.5.md')")" "a redirect into a spec is still refused"
+ok 2 "$(runpy $P "$(j_bash coder "cat /tmp/x > 'docs/specs/werewolf_ash-qss.5.md'")")" "a quoted redirect target is still checked"
+ok 2 "$(runpy $P "$(j_bash coder 'grep x docs/specs/a.md > /tmp/y; cp /tmp/y docs/specs/a.md')")" "another write verb still checks the whole command"
 
 # Redirects that only duplicate a file descriptor or hit /dev/null are reads.
 ok 0 "$(runpy $P "$(j_bash coder 'bash .claude/hooks/session-start.sh 2>&1 | tail -20')")" "2>&1 on a pipeline read is not a write"
