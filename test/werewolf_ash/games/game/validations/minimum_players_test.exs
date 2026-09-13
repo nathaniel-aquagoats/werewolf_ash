@@ -4,6 +4,7 @@ defmodule WerewolfAsh.Games.Game.Validations.MinimumPlayersTest do
   import WerewolfAsh.Generators
 
   alias Ash.Changeset
+  alias WerewolfAsh.Games
   alias WerewolfAsh.Games.Game.Validations.MinimumPlayers
 
   describe "validate/3" do
@@ -23,6 +24,25 @@ defmodule WerewolfAsh.Games.Game.Validations.MinimumPlayersTest do
 
       changeset = Changeset.for_update(game, :update, %{}, authorize?: false)
 
+      assert {:error, error} = MinimumPlayers.validate(changeset, [], %{})
+      assert Keyword.fetch!(error, :field) == :players
+    end
+
+    test "reads a non-default configured min_players, including one below 5" do
+      game = generate(game())
+      # game() already seats the owner; 2 more reaches 3 total.
+      generate_many(player(game_id: game.id), 2)
+
+      game =
+        Games.update_game_settings!(game, %{min_players: 3}, actor: %{id: game.owner_id})
+
+      changeset = Changeset.for_update(game, :update, %{}, authorize?: false)
+      assert MinimumPlayers.validate(changeset, [], %{}) == :ok
+
+      game =
+        Games.update_game_settings!(game, %{min_players: 10}, actor: %{id: game.owner_id})
+
+      changeset = Changeset.for_update(game, :update, %{}, authorize?: false)
       assert {:error, error} = MinimumPlayers.validate(changeset, [], %{})
       assert Keyword.fetch!(error, :field) == :players
     end

@@ -23,8 +23,14 @@ defmodule WerewolfAsh.Games.Game do
   alias WerewolfAsh.Games.Game.Changes.DealRoles
   alias WerewolfAsh.Games.Game.Changes.SeatOwner
   alias WerewolfAsh.Games.Game.Validations.ActorIsOwner
+  alias WerewolfAsh.Games.Game.Validations.CompositionFitsAtCap
   alias WerewolfAsh.Games.Game.Validations.KnownTimezone
+  alias WerewolfAsh.Games.Game.Validations.ManualWerewolfCountValid
+  alias WerewolfAsh.Games.Game.Validations.MaxPlayersNotBelowSeated
   alias WerewolfAsh.Games.Game.Validations.MinimumPlayers
+  alias WerewolfAsh.Games.Game.Validations.MinNotAboveMax
+  alias WerewolfAsh.Games.Game.Validations.PositivePlayerBounds
+  alias WerewolfAsh.Games.Game.Validations.RoleCompositionFits
 
   @states [:lobby, :day, :night, :hunter_pending, :finished]
 
@@ -68,6 +74,32 @@ defmodule WerewolfAsh.Games.Game do
       accept [:name, :timezone, :day_start, :day_end]
     end
 
+    # The consistency validations (rules 4-7) read resulting attribute
+    # values the same way ActorIsOwner does, and MaxPlayersNotBelowSeated
+    # (rule 18) is a before_action? validation, which cannot run atomically.
+    update :update_settings do
+      description "The owner's controls over role distribution and player bounds; locks once the game leaves the lobby."
+      require_atomic? false
+
+      accept [
+        :role_distribution_mode,
+        :manual_werewolf_count,
+        :seer_enabled,
+        :bodyguard_enabled,
+        :hunter_enabled,
+        :min_players,
+        :max_players
+      ]
+
+      validate ActorIsOwner
+      validate attribute_equals(:state, :lobby)
+      validate PositivePlayerBounds
+      validate MinNotAboveMax
+      validate ManualWerewolfCountValid
+      validate CompositionFitsAtCap
+      validate MaxPlayersNotBelowSeated, before_action?: true
+    end
+
     # The transitions read the game's windows and phases, so they cannot run
     # as a single atomic UPDATE.
     update :start do
@@ -82,6 +114,7 @@ defmodule WerewolfAsh.Games.Game do
 
       validate ActorIsOwner
       validate MinimumPlayers
+      validate RoleCompositionFits
 
       change DealRoles
       change {AdvancePhase, to: :by_clock}
@@ -177,6 +210,48 @@ defmodule WerewolfAsh.Games.Game do
 
     attribute :winner, WerewolfAsh.Games.Game.Winner do
       description "Set by the `finish` action once the game is over; nil while it is being played."
+      public? true
+    end
+
+    attribute :role_distribution_mode, WerewolfAsh.Games.Game.RoleDistributionMode do
+      description "How the werewolf count is decided: from the seated player count, or a fixed manual count."
+      allow_nil? false
+      public? true
+      default :automatic
+    end
+
+    attribute :manual_werewolf_count, :integer do
+      description "The werewolf count to deal when role_distribution_mode is :manual; read only in that mode."
+      public? true
+    end
+
+    attribute :seer_enabled, :boolean do
+      allow_nil? false
+      public? true
+      default true
+    end
+
+    attribute :bodyguard_enabled, :boolean do
+      allow_nil? false
+      public? true
+      default true
+    end
+
+    attribute :hunter_enabled, :boolean do
+      allow_nil? false
+      public? true
+      default true
+    end
+
+    attribute :min_players, :integer do
+      description "The minimum number of seated players start requires."
+      allow_nil? false
+      public? true
+      default 5
+    end
+
+    attribute :max_players, :integer do
+      description "The maximum number of players who may ever be seated; nil means no cap."
       public? true
     end
 

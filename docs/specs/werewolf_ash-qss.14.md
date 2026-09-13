@@ -1,5 +1,7 @@
 # werewolf_ash-qss.14: Owner-configurable game setup: role distribution, optional specials, player bounds
 
+Implemented in PR #19.
+
 Depends on: none
 
 ## For the owner
