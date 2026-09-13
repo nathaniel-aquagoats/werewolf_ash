@@ -107,7 +107,7 @@ Real-time (wall-clock day/night) werewolf game. Ash 3 domain is the source of tr
 - Rules decisions already made: bodyguard picks by day and protects that night, and may not protect the same player two days in a row; hunter gets a 1h window after death then a random target; lynch is plurality with tie = no lynch; the wolf kill is a single act, not a vote: any living werewolf may kill during the night, the first kill is the pack's one action for that night and is final (any later kill that night, by any wolf, is refused), and the victim dies immediately unless the bodyguard protected them that day, in which case the kill is spent and they survive; wolves coordinate in the wolves chat channel, not through a tally; the action type is :kill; seer gets an immediate yes/no
 - Real time: the game follows the natural flow of time. Only the villagers' day vote is deliberative; every other action (the wolves' kill, the seer's investigation, the hunter's shot) takes effect the moment it happens. The bodyguard is the one exception that must plan ahead: protection is chosen by day and locked when night starts, which is what keeps it from racing the wolves' kill
 - Deaths are announced: at the start of each day, everyone is told who died since the last announcement and what role each held, and a dead player's role becomes public from that announcement; at the start of each night, everyone is told night is starting
-- Actions are used once: a player may take each action type once per phase, and a second attempt is refused rather than replacing the first. That includes the day vote, so a villager's vote is final once cast
+- Actions are used once: a player may take each action type once per phase, and a second attempt is refused rather than replacing the first. The two daytime choices are the exception (owner decision 2026-09-13): while alive, a player may change or withdraw their day vote until voting closes, and the bodyguard may change or withdraw their protection until night starts. When the vote resolves, only living players' current votes for living targets count, and a bodyguard who is dead when night starts protects no one
 - Chat: two channels per game, `village` (all living players) and `wolves` (living werewolves), open in every phase; dead players can read every channel but post in none; living non-wolves never see the wolves channel
 - Alias style (enforced by `mix lint` via Credo): never group aliases (`alias Foo.{Bar, Baz}` -> one `alias` per line); never call a nested module fully qualified — `Foo.Bar.baz()` must be `alias Foo.Bar` + `Bar.baz()`. Elixir stdlib modules (`Enum`, `DateTime`, `Ecto`-style single names) are exempt per Credo's defaults
 - Do not commit or push unless asked. Spec pull requests are the standing exception (see Bead lifecycle)
@@ -134,8 +134,8 @@ grill the owner -> spec-author -> spec-reviewer -> spec PR -> owner merges it
   answer, until the design is settled. The owner asked for this: a question
   answered up front is a spec revision round that never happens.
 - `spec-author` (sonnet) writes `docs/specs/<bead-id>.md`: a `Depends on:`
-  line, a **For the owner** card (what changes, decisions with
-  recommendations, rule changes), then Goal, numbered testable Rules, Out of
+  line, a **For the owner** card (what changes, the decisions the owner made,
+  rule changes), then Goal, numbered testable Rules, Out of
   scope, Acceptance naming public functions, advisory Touches.
 - `spec-reviewer` (opus) checks it against the bead, the code and the settled
   decisions here, including that the header and the owner card are true. It
@@ -144,6 +144,11 @@ grill the owner -> spec-author -> spec-reviewer -> spec PR -> owner merges it
   AshGraphql behaves get the review. Beads that only change docs, config or
   wording skip it. If usage limits start to bite, move the middle tier to a
   Sonnet reviewer before dropping review.
+- **No open questions in a spec PR.** The author reports every judgement call
+  it made. Before the PR opens, the coordinator asks the owner each one here in
+  chat, with a recommendation, and the answers are written into the card. The
+  card's **Decisions** list what the owner already decided, so merging never
+  answers anything. The owner asked for this on 2026-09-13.
 - **The coordinator runs the loop quietly.** Authoring, one review pass and at
   most one revision happen without relaying each agent message to the owner.
   Only blockers go back to the author; the coordinator fixes nits directly in
@@ -158,8 +163,8 @@ grill the owner -> spec-author -> spec-reviewer -> spec PR -> owner merges it
 - **A spec PR title must not start `<bead-id>:`.** The sync closes a bead from
   that title shape, and the queue treats a commit subject of that shape on
   `main` as the bead being implemented.
-- **The owner approves by merging**, which accepts the card's
-  recommendations. A comment is a change request: the SessionStart report
+- **The owner approves by merging.** Every decision was already answered in
+  chat. A comment is a change request: the SessionStart report
   lists spec PRs with comments newer than their last push, and the coordinator
   acts on them, grilling the owner if a comment opens a design question,
   having the author revise, and pushing to the same PR.
