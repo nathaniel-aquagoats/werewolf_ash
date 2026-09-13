@@ -1,5 +1,7 @@
 # werewolf_ash-qss.5: EndDay Reactor: lynch resolution
 
+Implemented in PR #20.
+
 Depends on: none
 
 ## For the owner
