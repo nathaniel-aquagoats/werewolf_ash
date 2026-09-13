@@ -17,6 +17,7 @@ defmodule WerewolfAsh.Games.Action do
 
   alias WerewolfAsh.Games.Action.Changes.ApplyKill
   alias WerewolfAsh.Games.Action.Changes.RecordInvestigationResult
+  alias WerewolfAsh.Games.Action.Changes.ResolveKillWin
   alias WerewolfAsh.Games.Action.Validations.ActorAlive
   alias WerewolfAsh.Games.Action.Validations.ActorAndTargetInGame
   alias WerewolfAsh.Games.Action.Validations.NoConsecutiveProtect
@@ -103,6 +104,10 @@ defmodule WerewolfAsh.Games.Action do
 
       # rule 13 - the kill's immediate effect.
       change ApplyKill
+
+      # werewolf_ash-qss.6 rules 1, 3, 4 - the immediate win check that
+      # follows a landed kill; a spent kill runs no check at all.
+      change ResolveKillWin
     end
 
     update :update do

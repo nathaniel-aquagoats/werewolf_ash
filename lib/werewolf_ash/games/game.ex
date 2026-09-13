@@ -22,6 +22,7 @@ defmodule WerewolfAsh.Games.Game do
   alias WerewolfAsh.Games.Game.Changes.AdvancePhase
   alias WerewolfAsh.Games.Game.Changes.DealRoles
   alias WerewolfAsh.Games.Game.Changes.ResolveDayVote
+  alias WerewolfAsh.Games.Game.Changes.ResolveNightWin
   alias WerewolfAsh.Games.Game.Changes.SeatOwner
   alias WerewolfAsh.Games.Game.Validations.ActorIsOwner
   alias WerewolfAsh.Games.Game.Validations.CompositionFitsAtCap
@@ -146,6 +147,10 @@ defmodule WerewolfAsh.Games.Game do
       end
 
       change {AdvancePhase, to: :day}
+
+      # werewolf_ash-qss.6 rules 9-11 - dawn's own win check, one more time,
+      # before opening the new day.
+      change ResolveNightWin
     end
 
     update :finish do
