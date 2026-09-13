@@ -18,7 +18,10 @@ defmodule WerewolfAsh.Games.Action do
   alias WerewolfAsh.Games.Action.Changes.ApplyKill
   alias WerewolfAsh.Games.Action.Changes.RecordInvestigationResult
   alias WerewolfAsh.Games.Action.Validations.ActorAlive
+  alias WerewolfAsh.Games.Action.Validations.ActorAndTargetInGame
+  alias WerewolfAsh.Games.Action.Validations.NoConsecutiveProtect
   alias WerewolfAsh.Games.Action.Validations.ShootRequiresPendingHunter
+  alias WerewolfAsh.Games.Action.Validations.TargetAlive
   alias WerewolfAsh.Games.Action.Validations.TypeRequiresPhaseAndRole
 
   postgres do
@@ -48,6 +51,14 @@ defmodule WerewolfAsh.Games.Action do
       # that one instead).
       validate ActorAlive, where: [one_of(:type, [:vote, :investigate, :protect])]
 
+      # werewolf_ash-qss.18 rule 1 - the target must be alive too, except
+      # for :shoot (deferred to werewolf_ash-qss.7).
+      validate TargetAlive, where: [one_of(:type, [:vote, :investigate, :protect])]
+
+      # werewolf_ash-qss.18 rules 2, 3 - actor and target must both be
+      # seated in the phase's game, for every type.
+      validate ActorAndTargetInGame
+
       # rules 2, 4, 5 - each type requires its own phase kind and (except
       # :vote) the actor's dealt role.
       validate {TypeRequiresPhaseAndRole, phase_kind: :day},
@@ -62,6 +73,10 @@ defmodule WerewolfAsh.Games.Action do
       # rule 6 - a bodyguard may never protect themselves.
       validate compare(:target_id, is_not_equal: {:ref, :actor_id}),
         where: [attribute_equals(:type, :protect)]
+
+      # werewolf_ash-qss.18 rule 4 - a bodyguard may not protect the same
+      # player two days in a row.
+      validate NoConsecutiveProtect, where: [attribute_equals(:type, :protect)]
 
       # rule 7 - a shot requires the actor to be the game's pending hunter.
       validate ShootRequiresPendingHunter, where: [attribute_equals(:type, :shoot)]
@@ -80,6 +95,11 @@ defmodule WerewolfAsh.Games.Action do
       # kill, so neither validation needs a `where:`.
       validate ActorAlive
       validate {TypeRequiresPhaseAndRole, phase_kind: :night, role: :werewolf}
+
+      # werewolf_ash-qss.18 rules 1, 2, 3, unconditionally - same as above,
+      # :kill is never anything else.
+      validate TargetAlive
+      validate ActorAndTargetInGame
 
       # rule 13 - the kill's immediate effect.
       change ApplyKill
