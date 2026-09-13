@@ -10,17 +10,17 @@ game also checks that the player taking an action and the player they target
 are actually seated in the same game. The bodyguard still cannot protect the
 same person on two consecutive days.
 
-**Decisions for you.**
+**Decisions.**
 1. Should the bodyguard's "no repeat protection" check compare only against
    the day right before, or against every day they've ever protected?
-   **Recommended:** only the immediately preceding day — protecting the same
+   **Decided:** only the immediately preceding day — protecting the same
    person again is fine once at least one day has passed in between.
 2. On a game's very first day — or when a game happens to start at night, so
    its first day isn't its first phase — there is no earlier protection to
-   compare against yet. **Recommended:** allow any target in that case; the
+   compare against yet. **Decided:** allow any target in that case; the
    restriction only applies once there is a previous day to compare to.
 3. Should a hunter's shot also be blocked from targeting a dead player right
-   now? **Recommended:** not yet — the pending-hunter mechanics
+   now? **Decided:** not yet — the pending-hunter mechanics
    (werewolf_ash-qss.7) haven't been designed, so this spec leaves the shot's
    targeting rules untouched for now.
 
