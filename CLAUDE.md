@@ -271,14 +271,25 @@ All under `.claude/hooks/`. Tests: `bash .claude/hooks/test-hooks.sh`.
 (`set -Ux ROUTINE_ID trig_...`), never in the repo and never in chat.
 `fire-routine.sh` reads them from the environment and refuses if they are unset.
 
-The routine ("Spec implementation Routine") has three triggers: a GitHub
-trigger on `pull_request.closed`, a daily schedule at 15:00 UTC, and its API.
-The GitHub trigger needs the Claude GitHub App installed on the repository. It
-is attached with `RemoteTrigger` `create_webhook_trigger` and the body
+Two routines run the same saved prompt and configuration: Sonnet, the
+`Agent` and `Skill` tools (the orchestrator dispatches the coder and reviewer
+as subagents), no connectors, and no pinned output branch.
+
+- **"Coding after Spec Accepted"** has the GitHub trigger on pull requests
+  closing. It needs the Claude GitHub App installed on the repository.
+- **"Spec implementation Routine"** has the daily schedule at 15:00 UTC and the
+  API trigger that `fire-routine.sh` uses. Never give it a GitHub trigger too,
+  or every merge starts two runs.
+
+A routine created in the claude.ai form attaches every connector and pins a
+`claude/...` output branch by default; clear both, and check `Agent` and
+`Skill` are allowed. Duplicate runs are safe, since `next-bead.py --claimed`
+settles races, but they spend the daily cap. When attaching a GitHub trigger
+through `RemoteTrigger` `create_webhook_trigger`, the body that validates is
 `{"routine_trigger_id": "trig_...", "source": "github", "hook_type": "app",
 "scope_id": "<owner>/<repo>", "events": ["pull_request.closed"]}`; the filter
-format is undocumented and every shape tried was refused, so the trigger is
-unfiltered and `next-bead.py` sorts out what each run should do. Its saved prompt points at the
+format is undocumented, so the trigger is unfiltered and `next-bead.py`
+decides what each run does. Its saved prompt points at the
 skill and allows acting on exactly one line of fire text, `bead: <bead-id>`.
 
 The cloud environment's setup script is mirrored at `.claude/cloud-setup.sh`
