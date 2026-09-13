@@ -215,6 +215,11 @@ ok 0 "$(nb --check werewolf_ash-ccc.1)" "naming the stuck bead resumes its own P
 prs '[{"number":6,"title":"spec(werewolf_ash-hhh.1): x","headRefName":"spec/werewolf_ash-hhh.1","labels":[]}]'
 ok 0 "$(nb)" "an open spec PR does not occupy a slot"
 
+# The cloud reads PRs from the REST pulls API, whose shape differs from gh pr list.
+prs '[{"number":5,"title":"werewolf_ash-ccc.1: x","head":{"ref":"bead/werewolf_ash-ccc.1"},"labels":[{"id":1,"name":"needs-human"}]}]'
+ok 3 "$(nb)" "a REST-shaped needs-human bead PR pauses the queue"
+ok "paused #5 werewolf_ash-ccc.1: x" "$(first)" "REST head.ref and label names are read"
+
 prs '[]'
 commit "werewolf_ash-ccc.1: the dependency lands (#10)"
 ok 0 "$(nb)" "a merged dependency releases the waiting spec"

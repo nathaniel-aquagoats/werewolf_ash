@@ -41,8 +41,15 @@ Usage:
   next-bead.py --claimed <id>   after opening this bead's PR: did this run
                                 get the slot, or did an earlier PR take it?
 
+Open pull requests are read with the REST API (`gh api .../pulls`), never
+`gh pr list --json`: cloud sessions refuse GitHub GraphQL with HTTP 403, and
+every `gh pr list/view --json` call is GraphQL underneath (seen 2026-09-13, when
+it stopped the first queue run). NEXT_BEAD_REPO overrides the owner/repo that
+is otherwise read from the origin remote.
+
 Test seams: NEXT_BEAD_REF (default origin/main), NEXT_BEAD_NO_FETCH=1, and
-NEXT_BEAD_OPEN_PRS, a JSON file standing in for `gh pr list`.
+NEXT_BEAD_OPEN_PRS, a JSON file standing in for the pulls API (REST shape, or
+the older `gh pr list` shape).
 """
 
 import json
@@ -76,19 +83,49 @@ def git(*args):
     return result.stdout
 
 
+def normalize(pr):
+    """One PR in the shape the rest of this file reads, from either API shape."""
+    head = pr.get("headRefName")
+    if head is None:
+        head = (pr.get("head") or {}).get("ref", "")
+    return {
+        "number": pr["number"],
+        "title": pr.get("title", ""),
+        "headRefName": head,
+        "labels": [{"name": label.get("name")} for label in pr.get("labels") or []],
+    }
+
+
+def repo_slug():
+    slug = os.environ.get("NEXT_BEAD_REPO")
+    if slug:
+        return slug
+    url = git("remote", "get-url", "origin").strip()
+    match = re.search(r"([^/:]+)/([^/]+?)(?:\.git)?/?$", url)
+    if not match:
+        raise InputError("cannot read owner/repo from origin remote " + url)
+    return "%s/%s" % match.groups()
+
+
 def open_prs():
     path = os.environ.get("NEXT_BEAD_OPEN_PRS")
     if path:
         with open(path) as handle:
-            return json.load(handle)
+            return [normalize(pr) for pr in json.load(handle)]
     result = subprocess.run(
-        ["gh", "pr", "list", "--state", "open", "--limit", "100",
-         "--json", "number,title,headRefName,labels"],
+        ["gh", "api", "--paginate", "repos/%s/pulls?state=open&per_page=100" % repo_slug()],
         capture_output=True, text=True,
     )
     if result.returncode != 0:
-        raise InputError("gh pr list: " + result.stderr.strip()[:200])
-    return json.loads(result.stdout)
+        raise InputError("gh api pulls: " + result.stderr.strip()[:200])
+    # --paginate concatenates one JSON array per page.
+    decoder, text, prs, index = json.JSONDecoder(), result.stdout.strip(), [], 0
+    while index < len(text):
+        page, index = decoder.raw_decode(text, index)
+        prs.extend(page)
+        while index < len(text) and text[index].isspace():
+            index += 1
+    return [normalize(pr) for pr in prs]
 
 
 # Both reads follow main's first parents only. A PR merged with a merge commit
