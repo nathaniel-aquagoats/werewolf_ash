@@ -21,6 +21,7 @@ defmodule WerewolfAsh.Games.Game do
 
   alias WerewolfAsh.Games.Game.Changes.AdvancePhase
   alias WerewolfAsh.Games.Game.Changes.DealRoles
+  alias WerewolfAsh.Games.Game.Changes.ResolveDayVote
   alias WerewolfAsh.Games.Game.Changes.SeatOwner
   alias WerewolfAsh.Games.Game.Validations.ActorIsOwner
   alias WerewolfAsh.Games.Game.Validations.CompositionFitsAtCap
@@ -121,7 +122,7 @@ defmodule WerewolfAsh.Games.Game do
     end
 
     update :end_day do
-      description "Close the day and open the night."
+      description "Resolve the day's vote, then close the day and open the night (unless the vote just ended the game)."
       accept []
       require_atomic? false
 
@@ -131,6 +132,7 @@ defmodule WerewolfAsh.Games.Game do
       end
 
       change {AdvancePhase, to: :night}
+      change ResolveDayVote
     end
 
     update :end_night do

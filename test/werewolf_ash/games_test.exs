@@ -423,6 +423,70 @@ defmodule WerewolfAsh.GamesTest do
     end
   end
 
+  describe "day vote resolution (werewolf_ash-qss.5)" do
+    # Seats an owner + 4 more players, starts the game at 09:30 UTC so it
+    # lands in a day phase (Etc/UTC, 08:00/20:00 windows), and returns the
+    # game plus every player keyed by their dealt role.
+    defp started_day_game do
+      owner = generate(user())
+      game = generate(game(owner_id: owner.id))
+      generate_many(player(game_id: game.id), 4)
+      game = Games.start_game!(game, %{now: ~U[2026-06-15 09:30:00Z]}, actor: owner)
+
+      players =
+        Games.list_players!(query: [filter: [game_id: game.id]])
+        |> Map.new(&{&1.role, &1})
+
+      %{game: game, players: players}
+    end
+
+    defp open_day_phase(game), do: Games.get_game!(game.id, load: :current_phase).current_phase
+
+    test "a plurality lynch that does not end the game: the target dies and the game moves to night (rules 6, 15)" do
+      %{game: game, players: p} = started_day_game()
+      day = open_day_phase(game)
+
+      Games.create_action!(day.id, p.seer.id, p.villager.id, :vote)
+      Games.create_action!(day.id, p.bodyguard.id, p.villager.id, :vote)
+
+      game = Games.end_day!(game, %{now: ~U[2026-06-15 20:00:00Z]})
+
+      assert game.state == :night
+      assert Games.get_player!(p.villager.id).alive == false
+    end
+
+    test "a plurality lynch that removes the last living wolf finishes the game (rules 6, 12, 13, 14)" do
+      %{game: game, players: p} = started_day_game()
+      day = open_day_phase(game)
+
+      Games.create_action!(day.id, p.villager.id, p.werewolf.id, :vote)
+      Games.create_action!(day.id, p.seer.id, p.werewolf.id, :vote)
+
+      game = Games.end_day!(game, %{now: ~U[2026-06-15 20:00:00Z]})
+
+      assert game.state == :finished
+      assert game.winner == :village
+      assert Games.get_player!(p.werewolf.id).alive == false
+
+      game_phases = Games.list_phases!(query: [filter: [game_id: game.id]])
+      refute Enum.any?(game_phases, &is_nil(&1.ended_at))
+      refute Enum.any?(game_phases, &(&1.kind == :night))
+    end
+
+    test "a lynched hunter dies like any other target: no hunter window, straight to night (rule 11)" do
+      %{game: game, players: p} = started_day_game()
+      day = open_day_phase(game)
+
+      Games.create_action!(day.id, p.seer.id, p.hunter.id, :vote)
+      Games.create_action!(day.id, p.bodyguard.id, p.hunter.id, :vote)
+
+      game = Games.end_day!(game, %{now: ~U[2026-06-15 20:00:00Z]})
+
+      assert Games.get_player!(p.hunter.id).alive == false
+      assert game.state == :night
+    end
+  end
+
   describe "players" do
     setup do
       %{game: generate(game())}
