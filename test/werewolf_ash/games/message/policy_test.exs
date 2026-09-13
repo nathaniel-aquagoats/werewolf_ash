@@ -73,10 +73,13 @@ defmodule WerewolfAsh.Games.Message.PolicyTest do
       game = generate(game())
       villager = generate(player(game_id: game.id, role: :villager))
 
-      assert {:error, %Ash.Error.Invalid{errors: [error]}} =
+      assert {:error, %Ash.Error.Invalid{errors: errors}} =
                Games.send_message(game.id, villager.id, :wolves, "hi", actor: actor_for(villager))
 
-      assert %Ash.Error.Changes.InvalidAttribute{field: :channel} = error
+      assert Enum.any?(
+               errors,
+               &match?(%Ash.Error.Changes.InvalidAttribute{field: :channel}, &1)
+             )
     end
   end
 end

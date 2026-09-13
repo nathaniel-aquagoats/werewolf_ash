@@ -132,6 +132,19 @@ defmodule WerewolfAsh.Games.Action.PolicyTest do
       }
     end
 
+    test "an outsider holding no seat in the game cannot read any row", ctx do
+      outsider = generate(user())
+      outsider_actor = %{id: outsider.id}
+
+      assert {:error, %Ash.Error.Invalid{}} =
+               Games.get_action(ctx.vote.id, actor: outsider_actor)
+
+      assert {:error, %Ash.Error.Invalid{}} =
+               Games.get_action(ctx.kill.id, actor: outsider_actor)
+
+      assert Games.list_actions!(actor: outsider_actor) == []
+    end
+
     test ":kill is readable by a werewolf seat-holder", ctx do
       assert Games.get_action!(ctx.kill.id, actor: actor_for(ctx.wolf)).id == ctx.kill.id
     end

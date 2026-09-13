@@ -126,7 +126,7 @@ defmodule WerewolfAsh.Games.Action do
 
     # rule 8 - a row is readable while the actor holds a seat, any role,
     # alive or dead, in the row's phase's game, except: a :kill row also
-    # requires a living werewolf seat; an :investigate row also requires the
+    # requires a werewolf seat; an :investigate row also requires the
     # reading actor's own seat to be the row's own actor (the seer who cast
     # it); a :protect row is narrowed the same way, to the bodyguard who
     # cast it. None of these three narrowings apply once the reading

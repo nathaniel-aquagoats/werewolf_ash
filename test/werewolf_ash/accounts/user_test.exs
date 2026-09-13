@@ -131,5 +131,15 @@ defmodule WerewolfAsh.Accounts.UserTest do
       assert reloaded.id == user.id
       assert reloaded.name == "Solo"
     end
+
+    test "a mismatched actor reads nothing via :current_user, even by id" do
+      user = generate(user(name: "Solo"))
+      stranger = generate(user())
+
+      assert {:error, %Ash.Error.Invalid{}} =
+               Ash.get(User, user.id, action: :current_user, actor: stranger)
+
+      assert Ash.get!(User, user.id, action: :current_user, actor: user).id == user.id
+    end
   end
 end

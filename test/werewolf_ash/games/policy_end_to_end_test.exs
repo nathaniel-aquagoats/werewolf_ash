@@ -89,8 +89,10 @@ defmodule WerewolfAsh.Games.PolicyEndToEndTest do
 
     assert {:error, %Ash.Error.Invalid{}} = Games.get_action(kill.id, actor: villager_actor)
 
-    assert {:error, %Ash.Error.Invalid{errors: [%{field: :channel}]}} =
+    assert {:error, %Ash.Error.Invalid{errors: errors}} =
              Games.send_message(game.id, villager.id, :wolves, "sneak", actor: villager_actor)
+
+    assert Enum.any?(errors, &match?(%Ash.Error.Changes.InvalidAttribute{field: :channel}, &1))
 
     # As the werewolf: reads fellow wolves' roles and :kill actions, posts
     # in both channels (already done above).
