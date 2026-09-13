@@ -387,6 +387,23 @@ defmodule WerewolfAsh.GamesTest do
       assert Games.get_game!(game.id).state == :lobby
     end
 
+    test "refuses a configuration the seated players cannot satisfy (rule 9)" do
+      owner = generate(user())
+      game = generate(game(owner_id: owner.id))
+      # game() seats the owner, so 2 more reaches 3 total: 3 specials + 1 wolf > 3.
+      generate_many(player(game_id: game.id), 2)
+      game = update_settings!(game, %{min_players: 3})
+
+      assert {:error, %Ash.Error.Invalid{errors: [error]}} =
+               Games.start_game(game, %{}, actor: owner)
+
+      assert %Ash.Error.Changes.InvalidChanges{fields: [:players]} = error
+
+      # no roles are dealt when this fires
+      assert Games.list_players!(query: [filter: [game_id: game.id]])
+             |> Enum.all?(&is_nil(&1.role))
+    end
+
     test "deals exactly one role to every seated player once the owner starts the game" do
       %{game: game, owner: owner} = ready()
 

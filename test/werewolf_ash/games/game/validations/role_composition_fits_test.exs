@@ -52,12 +52,21 @@ defmodule WerewolfAsh.Games.Game.Validations.RoleCompositionFitsTest do
       assert Keyword.fetch!(error, :field) == :players
     end
 
-    test "a below-5 seat count that fits exactly passes (rule 8's guard removal)" do
+    test "a below-4 seat count with every special disabled passes (rule 8's guard removal)" do
       game = generate(game())
-      generate_many(player(game_id: game.id), 3)
+      generate(player(game_id: game.id))
 
       game =
-        Games.update_game_settings!(game, %{min_players: 4}, actor: %{id: game.owner_id})
+        Games.update_game_settings!(
+          game,
+          %{
+            min_players: 2,
+            seer_enabled: false,
+            bodyguard_enabled: false,
+            hunter_enabled: false
+          },
+          actor: %{id: game.owner_id}
+        )
 
       changeset = Changeset.for_update(game, :update, %{}, authorize?: false)
       assert RoleCompositionFits.validate(changeset, [], %{}) == :ok

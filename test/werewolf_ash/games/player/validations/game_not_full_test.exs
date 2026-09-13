@@ -11,7 +11,8 @@ defmodule WerewolfAsh.Games.Player.Validations.GameNotFullTest do
 
   describe "init/1" do
     test "accepts an atom field" do
-      assert GameNotFull.init(field: :game_id) == {:ok, [field: :game_id]}
+      assert {:ok, opts} = GameNotFull.init(field: :game_id)
+      assert opts[:field] == :game_id
     end
 
     test "rejects anything that is not an atom, or nil" do
