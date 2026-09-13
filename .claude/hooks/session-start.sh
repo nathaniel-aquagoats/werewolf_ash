@@ -24,7 +24,15 @@ if ! pg_isready -h localhost -q 2>/dev/null; then
   fi
 fi
 
-command -v bd >/dev/null 2>&1 || exit 0
+# Cloud sessions have no bd. Their cached environment setup can predate a
+# dependency added since (swoosh, 2026-09-13), so fetch deps before any mix
+# command needs them.
+if ! command -v bd >/dev/null 2>&1; then
+  if command -v mix >/dev/null 2>&1 && [ -f "${CLAUDE_PROJECT_DIR:-.}/mix.exs" ]; then
+    (cd "${CLAUDE_PROJECT_DIR:-.}" && mix deps.get >/dev/null 2>&1) || true
+  fi
+  exit 0
+fi
 
 SYNC_TEXT="$(bash "$HERE/sync-beads.sh" 2>/dev/null)"
 PRIME_JSON="$(bd prime --hook-json 2>/dev/null)"

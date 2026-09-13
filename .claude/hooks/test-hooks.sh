@@ -85,6 +85,24 @@ ok 0 "$(run $G '{"hook_event_name":"PreToolUse","cwd":"/nonexistent","tool_input
 # A missing cwd means no mix project, so the gate cannot run: it must not wedge.
 ok 0 "$(run $G '{"hook_event_name":"PreToolUse","cwd":"/nonexistent","tool_input":{"command":"git push -u origin bead/x"}}')" "push outside a mix project is not blocked"
 
+# Pushes that change nothing outside docs/specs/ skip the gates; code changes do not.
+GR="$(mktemp -d)"
+gg() { git -C "$GR" -c user.name=t -c user.email=t@example.com -c commit.gpgsign=false -c core.hooksPath=/dev/null "$@"; }
+gg init -q
+printf 'this is not a real mix project\n' >"$GR/mix.exs"
+gg add mix.exs && gg commit -q -m base
+gg update-ref refs/remotes/origin/main HEAD
+push_payload() { printf '{"hook_event_name":"PreToolUse","cwd":"%s","tool_input":{"command":"git push -u origin bead/x"}}' "$GR"; }
+gate() { printf '%s' "$(push_payload)" | env -u CLAUDE_PROJECT_DIR bash "$HERE/gates.sh" >/dev/null 2>&1; echo $?; }
+gg commit -q --allow-empty -m "werewolf_ash-x.1: start"
+ok 0 "$(gate)" "an empty claim commit push skips the gates"
+mkdir -p "$GR/docs/specs" && printf 'Implemented in PR #1.\n' >"$GR/docs/specs/werewolf_ash-x.1.md"
+gg add docs/specs && gg commit -q -m "werewolf_ash-x.1: stamp spec with PR #1"
+ok 0 "$(gate)" "a spec-stamp push skips the gates"
+mkdir -p "$GR/lib" && printf 'defmodule X do end\n' >"$GR/lib/x.ex"
+ok 2 "$(gate)" "an untracked code file in the same command still runs the gates"
+rm -rf "$GR"
+
 echo "== _payload.py =="
 out="$(printf '%s' '{"a":"1","b":{"c":"2"}}' | python3 "$HERE/_payload.py" a b.c missing)"
 ok "1

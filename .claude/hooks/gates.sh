@@ -34,6 +34,22 @@ fi
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-${CWD:-$PWD}}"
 cd "$PROJECT_DIR" 2>/dev/null || exit 0
 
+# A push that changes nothing outside docs/specs/ carries no code: the cloud
+# orchestrator's empty "<bead-id>: start" claim commit, its one-line spec stamp,
+# or a spec branch. Gating those ran the whole suite before a bead could claim
+# its slot (2026-09-13). Uncommitted and untracked files count as changes, since
+# the hook fires before a "git commit && git push" command runs.
+if [ "$EVENT" = "PreToolUse" ]; then
+  base="$(git merge-base HEAD origin/main 2>/dev/null)"
+  if [ -n "$base" ]; then
+    changed="$({
+      git diff --name-only "$base" 2>/dev/null
+      git ls-files --others --exclude-standard 2>/dev/null
+    } | grep -v '^docs/specs/' || true)"
+    [ -n "$changed" ] || exit 0
+  fi
+fi
+
 # Nothing to gate outside the Elixir project, or where mix is not installed.
 [ -f mix.exs ] || exit 0
 command -v mix >/dev/null 2>&1 || exit 0
@@ -53,6 +69,9 @@ run_gate() {
   fi
 }
 
+# A cloud environment's cached setup can predate a dependency added since
+# (swoosh, 2026-09-13), and every later gate then fails on it.
+run_gate "mix deps.get" mix deps.get
 run_gate "mix compile --warnings-as-errors" mix compile --warnings-as-errors
 run_gate "mix ash.codegen --check" mix ash.codegen --check
 run_gate "mix lint" mix lint
