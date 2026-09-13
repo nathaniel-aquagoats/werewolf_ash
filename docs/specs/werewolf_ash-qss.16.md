@@ -4,79 +4,149 @@ Depends on: werewolf_ash-qss.5, werewolf_ash-27w.2
 
 ## For the owner
 
-**What changes.** During the day, every player in the game — including those
-who have already died — can watch the vote tally update live: who is voting
-for whom, as it happens. Your own vote always shows up under your name, even
-after you die. The wolves' night kill stays anonymous to everyone but the
-wolves; only the day vote is open.
+**What changes.** During the day, every player in the game can watch the
+vote tally update live: who is voting for whom, as it happens. A living
+player sees only the votes that will actually decide the day — a living
+voter's current vote for a still-living target — with one exception: your
+own vote stays visible to you even after it stops counting because your
+target died, now marked as not counting, so you know to cast another; no
+other living player sees a vote once it stops counting, including yours.
+That view updates instantly whenever a vote is cast, changed, withdrawn, or
+stops counting. A dead player sees more: every vote still on the books,
+including ones that no longer count because the voter or their target has
+since died, each clearly marked as not counting — the dead watch as
+spectators with the full picture, the living see only what's live (plus
+their own). The wolves' night kill is never shown to living non-wolves, and
+never surfaces through the tally either way; only the day vote is open.
 
 **Decisions for you.**
 1. Open ballot vs. secret ballot (who sees who voted for whom, and when) —
    open (everyone watches votes land live) vs. secret (see only counts, or
-   see nothing until the day resolves). **Recommended:** open ballot — the
-   classic default, and what this spec builds.
+   see nothing until the day resolves). **Decided:** open ballot — everyone
+   in the game sees who is voting for whom, live, counting only the votes
+   that will count.
 2. Who sees the running tally during the day — living players only, or
-   everyone in the game? **Recommended:** everyone; living and dead players
-   see the identical tally.
+   everyone in the game? **Decided:** everyone in the game, living or dead,
+   sees the tally.
 3. What do dead players see — the same tally as the living, or something
-   extra? **Recommended:** exactly the same as the living, nothing more.
+   extra? **Decided:** dead players see every vote, with non-counting votes
+   marked; the living see counting votes only.
 4. When do votes become visible — the instant they're cast, or only once the
-   day resolves? **Recommended:** instantly; the tally always reflects
-   whatever votes exist right now.
+   day resolves? **Decided:** instantly; the tally updates the moment a vote
+   is cast, changed, or withdrawn.
+5. Which votes does the live tally show? — **Decided:** only votes that will
+   count: living voters' current votes for living targets. A vote from a
+   player who has since died, or naming a target who has since died, is not
+   shown, and a change or withdrawal shows the instant it happens.
+6. Your vote stops counting because your target died — do you still see it?
+   — **Decided:** yes, marked not counting; other living players don't see
+   it.
 
 **Rule changes.** Adds to CLAUDE.md's settled decisions: "the day vote is an
-open ballot: every game member, living or dead, sees the full running
-tally — who voted for whom — visible the instant each vote is cast; the
-wolves' night kill is never shown to non-wolves."
+open ballot, watched live and updated instantly. A living game member sees
+only the votes that currently count — each living voter's current vote for a
+living target — plus their own vote even after it stops counting, marked as
+such, visible to no other living player. A dead game member sees every
+currently cast vote in the phase, including one from a since-dead voter or
+naming a since-dead target, each marked whether it currently counts — the
+dead see everything, as spectators in an afterlife. The wolves' night kill is
+never shown to living non-wolves, and never surfaces through the tally."
 
 ## Goal
 
 Today a day's votes can be cast (qss.4) and, once qss.5 lands, resolved into a
 lynch or no-lynch at `end_day` — but nothing in between lets a caller ask
 "what does today's vote look like right now." After this bead,
-`WerewolfAsh.Games.Phase` can answer that directly: a `:vote_tally`
-calculation returns, for a given phase, the same map from target player id to
-voter player ids that `WerewolfAsh.Games.Reactors.ResolveLynch.tally/1`
-(qss.5) computes — but only over the `:vote` rows the reading actor is
-actually allowed to see. Because 27w.2's `Action` read policy (rule 8) already
-grants every game member — any role, living or dead — unrestricted read
-access to `:vote` rows, and separately protects `:kill`/`:investigate` rows,
-the visibility this bead needs comes from the calculation re-running an
-ordinary, fully authorized read of `Action` itself — rather than from any new
-authorization code, and, importantly, *not* from declaring the phase's
-`actions` relationship as a load dependency (verified broken for this
-purpose in this Ash version — see rule 1): a game member sees the whole
-day's tally including their own vote; someone outside the game sees nothing;
-a night phase's kill never surfaces through this path at all. The ballot
-style — full transparency, the epic's classic open-vote default — is decided
-and recorded here, as the bead's `Done:` line asks.
+`WerewolfAsh.Games.Phase` answers that directly, in one uniform shape for
+every reader: a `:vote_tally` calculation returns a map from target player id
+to a list of vote-detail maps, `%{voter_id: <player id>, counts: <boolean>}`
+— one entry per `:vote` row currently recorded in that phase. `counts` on
+each entry is `true` exactly when that entry's voter *and* target are both
+currently alive — the identical living-voter/living-target rule qss.5 applies
+at its own resolution (qss.5 rules 8-9) — decided by filtering the phase's
+`:vote` rows to a living voter and a living target and handing the survivors
+to `WerewolfAsh.Games.Reactors.ResolveLynch.tally/1` (qss.5) to group them.
+`tally/1` itself is unchanged and has no idea what "alive" means (it just
+groups whatever list of `:vote` structs it's handed), so this bead's own
+calculation does that filtering itself, mirroring
+(not reusing) the identical living-voter/living-target filter qss.5's own
+`ResolveLynch` reactor applies, separately, before its own call to that same
+`tally/1`. Which of these uniformly-shaped entries a given reader actually
+gets back is where the two audiences differ: a living game member sees the
+`counts: true` entries, plus their own entry even when it is `counts: false`
+(owner decision 2026-09-13: your own vote keeps showing once it stops
+counting, so you know to cast another — visible to you and no other living
+reader) — dropping a target with no entries left under this narrowing
+entirely — while a dead game member sees every entry, `counts: true` and
+`counts: false` alike, the fuller picture (owner decision 2026-09-13, "the
+dead see everything, as spectators in an afterlife"). Both views are built
+from one single read of the `:vote`-type `Action` rows the reading actor is
+actually allowed to see. Because 27w.2's `Action` read policy (rule 8)
+already grants every game member — any role, living or dead — unrestricted
+read access to `:vote` rows, and separately protects
+`:kill`/`:investigate`/`:protect` rows, the visibility this bead needs comes
+from the calculation re-running an ordinary, fully authorized read of `Action` itself
+— rather than from any new authorization code, and, importantly, *not* from
+declaring the phase's `actions` relationship as a load dependency (verified
+broken for this purpose in this Ash version — see rule 1): which entries a
+given actor's read keeps is decided separately, by their own `Player.alive`
+in that game (rule 10) — not by anything about the votes themselves; someone
+outside the game sees nothing either way; a night phase's kill never surfaces
+through this path at all. The ballot style — full transparency, the epic's
+classic open-vote default, now split into a living view of only the votes
+that currently count and a dead view of everything currently on the books,
+both expressed in the same shape — is decided and recorded here, as the
+bead's `Done:` line asks.
 
 ## Assumptions
 
-1. **Open ballot, not secret.** Per the bead's own default, this spec builds
-   full transparency: every game member sees the running tally — every
-   target's vote count and the identity of every player who voted for them —
-   with no narrower "counts only" or "nothing until resolution" mode. This is
-   recorded as the settled decision in the new calculation module's
-   `@moduledoc` (see rule 1 and Touches), because the coder cannot record it
-   in `CLAUDE.md` directly: `protect-pipeline.py` refuses subagent writes to
-   that file, and the bead pipeline's own division of labour reserves
-   `CLAUDE.md` edits for the main tree. After this bead merges, the
-   coordinator adds the decision to `CLAUDE.md`'s "Rules decisions already made"
-   list in the main tree (recorded on the bead's notes); this spec does not
-   perform that step.
-   If the owner reverses this to a secret ballot later, rules 1, 4 and 6 below
-   are the ones that redesign would replace, and 27w.2's rule 8 (which
-   currently grants `:vote` rows no narrowing beyond game membership) would
-   need to change too — see the note on 27w.2 below.
+1. **Open ballot, not secret.** Per the owner's decision (the bead's own
+   default, now confirmed), this spec builds full transparency, not a
+   narrower "counts only" or "nothing until resolution" mode: a living game
+   member sees every live target's vote count and the identity of every
+   living voter who currently votes for them (rule 4's filtered view), and a
+   dead game member sees the identity of every voter for every target,
+   whether or not that vote currently counts (rule 9's unfiltered view). This
+   is orthogonal to the owner's separate
+   2026-09-13 decisions that (a) only living voters' votes for living targets
+   count in the first place, and (b) which of those two views — living or
+   dead — a reader gets depends on their own seat: those decisions narrow
+   *which votes exist to be tallied, and for whom*, not how openly a vote is
+   shown to the audience that can see it at all. This is recorded as the
+   settled decision in the new calculation module's `@moduledoc` (see rule 1
+   and Touches), because the coder cannot record it in `CLAUDE.md` directly:
+   `protect-pipeline.py` refuses subagent writes to that file, and the bead
+   pipeline's own division of labour reserves `CLAUDE.md` edits for the main
+   tree. After this bead merges, the coordinator adds the decision to
+   `CLAUDE.md`'s "Rules decisions already made" list in the main tree
+   (recorded on the bead's notes); this spec does not perform that step.
+   If the owner reverses this to a secret ballot later, rules 1, 4, 6, 9 and
+   10 below are the ones that redesign would replace, and 27w.2's rule 8
+   (which currently grants `:vote` rows no narrowing beyond game membership)
+   would need to change too — see the note on 27w.2 below.
 
-2. **This spec adds no authorization code of its own; its visibility rules
-   depend on werewolf_ash-27w.2.** Rules 4, 5 and 6 hold because rule 1's
-   calculation performs its own authorized read of `Action`, which applies
-   `Action`'s read policy from 27w.2 (rule 8). `qss.16` depends on `27w.2` in
-   the bead graph, so that policy exists before this bead is implemented, and
-   the non-member tests below exercise real filtering. This spec adds no
-   redundant membership check, per the brief not to add a second policy layer.
+2. **This spec adds no *authorization* code of its own — no change to *who*
+   may read anything — but it does add its own content filtering on top of
+   an unfiltered read; those are different things.** Which `:vote` rows this
+   bead's calculation is even handed comes entirely from `Action`'s own read
+   policy (27w.2 rule 8), via rule 1's calculation performing its own
+   authorized read; `qss.16` depends on `27w.2` in the bead graph, so that
+   policy exists before this bead is implemented, and the non-member tests
+   below exercise real filtering. This spec adds no redundant *membership*
+   check, per the brief not to add a second policy layer. It does add two
+   pieces of its own logic on top of that read, neither of which is
+   authorization: (a) rule 4's filter of those rows to a living voter and a
+   living target, before calling `tally/1` — `tally/1` (qss.5) does not do
+   this itself (see rule 1) — mirroring, not reusing, the identical filter
+   qss.5's own `ResolveLynch` reactor applies for its own purpose; and (b)
+   rule 10's read of the reading actor's own `Player.alive` in the phase's
+   game, to choose which of rule 1's uniformly-shaped entries a reader
+   actually gets back — all of them (rule 9), or the `counts: true` ones plus
+   the reader's own entry regardless of its `counts` (rule 4). Neither (a)
+   nor (b) changes *whether* the actor may read
+   `:vote_tally` at all (rule 5 still governs that) — (a) decides each
+   entry's own `counts` flag, and (b) decides which of those already-built
+   entries a given reader is shown.
 
 3. **A calculation, not a preparation.** The bead's own acceptance criteria
    say "a preparation or calculation." A preparation (like
@@ -91,20 +161,44 @@ and recorded here, as the bead's `Done:` line asks.
    `:map`, backed by a new `Ash.Resource.Calculation` module (name advisory,
    see Touches). Reading it for a given phase — e.g.
    `Games.get_phase!(phase.id, load: :vote_tally, actor: actor)` — returns
-   exactly `WerewolfAsh.Games.Reactors.ResolveLynch.tally/1`'s result (the
-   qss.5 function, reused verbatim: same module, same arity, same output
-   shape — do not fork or reshape it) computed over the `:vote`-type `Action`
-   rows of that phase **that the calling actor is authorized to read**.
-   Nothing in this calculation re-checks game membership, role or aliveness
-   itself: visibility is entirely inherited from `Action`'s own read policy
-   (27w.2 rule 8), by having the calculation's `calculate/3` callback
+   one uniform shape for every reader: a map from target id to a list of
+   vote-detail maps, `%{voter_id: <player id>, counts: <boolean>}` — one
+   entry per `:vote`-type `Action` row of that phase **that the calling actor
+   is authorized to read**. `counts` on each entry is `true` exactly when
+   that entry's voter and target are both currently alive, and `false`
+   otherwise — the identical living-voter/living-target rule qss.5 applies at
+   its own resolution (qss.5 rules 8-9), computed here by this bead's own
+   calculation rather than inherited from qss.5. This bead's own calculation
+   decides the flag by filtering the read rows to a living voter and a living
+   target and handing the survivors to
+   `WerewolfAsh.Games.Reactors.ResolveLynch.tally/1` (the qss.5 function,
+   reused unmodified — same module, same arity, same input/output contract,
+   not forked or reshaped itself), then marking every row by whether it
+   appears in that result. `tally/1` itself has no notion of aliveness at all
+   — it is qss.5's unchanged, pure grouping function, handed whatever list
+   it's given — so this filtering is *this bead's own* code, mirroring (not
+   reusing) the identical filter qss.5's `ResolveLynch` reactor applies,
+   separately, before its own call to that same `tally/1` for its own purpose
+   (deciding the lynch). Which *subset* of these uniformly-shaped entries a
+   given reader actually gets back — every entry (a dead reader, rule 9), or
+   the `counts: true` ones plus the reader's own entry regardless of its
+   `counts` (a living reader, rule 4) — is decided by rule 10, by the
+   reader's own seat, not by rule 1 itself. Nothing in this
+   calculation re-checks game membership, role or aliveness *to decide which
+   rows it is allowed to read*: visibility of the underlying rows is entirely
+   inherited from `Action`'s own read policy (27w.2 rule 8), by having the
+   calculation's `calculate/3` callback
    (`deps/ash/lib/ash/resource/calculation/calculation.ex:212`) perform its
    *own* ordinary, top-level, authorized read of `Action` — filtered to the
    phases being calculated and `type == :vote` — passing
    `Ash.Context.to_opts(context)` (with no overrides) as that read's options,
    so the calculation's own `actor` and `authorize?` (inherited unchanged
    from whatever query asked for `:vote_tally`) govern it exactly as they
-   would `Games.list_actions`.
+   would `Games.list_actions`. What this calculation *does* check itself,
+   after that read, is the aliveness of each row's voter and target (to build
+   the `counts` flag) and the reading actor's own aliveness (rule 10, to pick
+   which entries to keep) — neither is a read-authorization check; see
+   Assumption 2.
 
    **This bead's calculation must NOT declare the phase's `actions`
    relationship as a `load/3` dependency instead** (e.g.
@@ -113,7 +207,7 @@ and recorded here, as the bead's `Done:` line asks.
    broken for this purpose in this version of Ash: a relationship declared as
    a calculation's load dependency is authorized with `authorize?: false`
    regardless of the caller's own actor/authorize?, so it would silently hand
-   every phase's `:vote` (and `:kill`/`:investigate`) rows to every caller,
+   every phase's `:vote` (and `:kill`/`:investigate`/`:protect`) rows to every caller,
    member or not. This is deliberate elsewhere in Ash, not a bug to work
    around, but it means the naive design is actively wrong here, not merely
    non-preferred:
@@ -174,12 +268,36 @@ and recorded here, as the bead's `Done:` line asks.
    `:vote` row on a night or `hunter_pending` phase), reading `:vote_tally`
    for a non-day phase always returns `%{}`. This is a corollary of rule 2
    plus that existing validation, not a new phase-kind check to add.
-4. A game member — any role, living or dead, per 27w.2 rule 8's baseline
-   ("an actor may read an `Action` row only while they hold a seat — any
-   role, alive or dead — in that row's phase's game") — reading `:vote_tally`
-   for a day phase of their own game sees every vote cast in that phase: the
-   full map from target id to voter ids, unfiltered by any voter's or
-   target's own role or aliveness.
+4. A **living** game member (per 27w.2 rule 8's baseline that any seat —
+   any role, alive or dead — may read `Action` rows in its own game) reading
+   `:vote_tally` for a day phase of their own game gets back rule 1's
+   uniform map, narrowed to: every entry whose `counts` is `true`, plus —
+   when the reading actor themselves cast a `:vote` in that phase — their own
+   entry (`voter_id` equal to the reader's own player id) under whichever
+   target they chose, even when that entry's `counts` is `false` (owner
+   decision 2026-09-13: a living voter keeps seeing their own vote once it
+   stops counting, so they know to cast another; see card decision 6). No
+   other player's `counts: false` entry is ever included in a living reader's
+   view — the reader's-own-vote exception is keyed to the reader's own
+   identity, not to the vote itself, so a different living reader looking at
+   the same phase never sees it. A target left with no entry at all under
+   this narrowing — no `counts: true` entry, and not the reader's own
+   non-counting one either — is absent from the map entirely, as a key, not
+   present with an empty list — matching `tally/1`'s own "a target nobody
+   voted for is absent, not an empty list" contract (qss.5 rule 1) once
+   translated through the entry shape. The `counts: true` narrowing is *this
+   bead's own* filter, built by handing the rows whose voter and target are
+   both alive to `tally/1` (rule 1) and keeping only the entries that match;
+   `tally/1` itself is qss.5's unchanged, aliveness-agnostic grouping function
+   and performs neither this restriction nor the reader's-own-vote exception,
+   both of which are this bead's alone. The `counts: true` filter mirrors,
+   rather than reuses, the identical living-voter/living-target rule qss.5's
+   own `ResolveLynch` reactor applies before its own, separate call to
+   `tally/1`, so the two never define "counts" differently. A **dead** game
+   member reading the same phase gets rule 9's unfiltered view of the very
+   same entries instead — never this rule's narrowed subset (owner decision
+   2026-09-13); which of the two a given reader gets is decided by rule 10,
+   not by anything about the votes themselves.
 5. An actor with no seat in the phase's game — including no actor at all —
    reading `:vote_tally` gets `%{}` back, never a hard authorization error.
    This is `ResolveLynch.tally/1`'s own empty-input case (qss.5 rule 4)
@@ -187,19 +305,64 @@ and recorded here, as the bead's `Done:` line asks.
    rows to nothing before the tally is computed — the same
    "policies filter reads to empty, they don't raise" pattern already used
    for `Game`, `Player` and `Action` reads elsewhere (27w.2 rules 1, 4, 8).
-6. A player who cast a vote in the tallied phase always finds their own
-   player id among the voters for the target they chose, when they themselves
-   read that phase's `:vote_tally` — including when that player has since
-   died (qss.5's own A1 assumption: a since-dead voter's vote still counts).
-   This is a corollary of rule 4 under the open-ballot design chosen here, but
-   it is kept as its own rule so a future narrowing of rule 4 (e.g. a secret
-   ballot) cannot silently drop it without a test noticing.
+6. A player's own current vote, if they cast one in the tallied phase, has
+   an entry in rule 1's uniform map (`%{voter_id: <own id>, counts:
+   <boolean>}`, under whichever target they chose), and a living player
+   always finds that entry when they read `:vote_tally` themselves, whatever
+   its `counts` value: while their chosen target is alive, it's `counts:
+   true` and appears in rule 4's view the same way it would to any other
+   living reader; once their target dies, it becomes `counts: false` and
+   rule 4's own-vote exception is what keeps it in *their* view — a different
+   living reader looking at the same phase never sees that entry once it
+   stops counting (owner decision 2026-09-13, card decision 6: seeing your
+   own vote is what tells you to cast another). Once the player themselves
+   has died, rule 10 gives them rule 9's unfiltered view instead, where their
+   own entry always appears under whichever target they chose, with `counts:
+   false` — their own death is sufficient on its own to make it not count,
+   whatever their target's status — for as long as the underlying `:vote`
+   `Action` row exists (owner decision 2026-09-13; this reverses this spec's
+   earlier assumption that a since-dead voter's own vote disappears from what
+   they see entirely). This is a corollary of rules 4, 9 and 10, but is kept
+   as its own rule so a future change to any of them cannot silently drop the
+   own-vote guarantee without a test noticing.
 7. (withdrawn — no code in this bead can break it: it would only check that
    qss.5's `end_day` doesn't delete `:vote` rows. See Out of scope.)
 8. The `:vote_tally` calculation is declared `public? true`, so a later
    GraphQL field (27w.3) can select it without any further domain-layer
    change — this is what "expose the tally as data the API can serve" means
    concretely for this bead, which stops at the domain code interface.
+9. A **dead** game member (their own `Player.alive` is `false` in the
+   phase's game — rule 10) reading `:vote_tally` gets rule 1's uniform map
+   entirely unfiltered: every entry for every `:vote` row currently recorded
+   in that phase, `counts: true` and `counts: false` alike — covering every
+   currently-cast vote, not only the ones that currently count (owner
+   decision 2026-09-13, "the dead see everything, as spectators in an
+   afterlife"). This rule adds no separate computation of its own: the
+   entries and their `counts` flags are exactly rule 1's/4's already-built
+   ones (voter and target both alive — rule 4's filter-then-`tally/1`
+   result), simply not narrowed down the way rule 4 narrows them for a living
+   reader (to `counts: true` entries, plus that reader's own). A target
+   named only by non-counting votes belonging to other players, which rule
+   4's view would omit entirely for any living reader but the voter
+   themselves, still appears as a key here (with only `counts: false`
+   entries); a target with no `:vote` row naming it at all — counting or not
+   — is absent from this map exactly as from rule 4's view.
+10. Which subset of rule 1's uniformly-shaped entries a `:vote_tally` read
+    returns — rule 4's (`counts: true`, plus the reader's own entry) or rule
+    9's (every entry) — is decided once, by the reading actor's own seat in
+    the phase's game, not by anything about the individual votes: the
+    calculation reads the actor's own `Player` row for that phase's
+    `game_id` (matched by `user_id`) and branches on its `alive` field:
+    `true` yields rule 4's view, `false` yields rule 9's. When that lookup
+    finds no `Player` row at all for the reading actor in that game —
+    including when there is no actor at all — the result is `%{}` (rule 5)
+    regardless of which view would otherwise apply: ordinarily this is
+    because the underlying `:vote` read (rule 1) already returned no rows for
+    a properly-authorized non-member, but even if rows had come back some
+    other way (e.g. `authorize?: false`), this branch's own `Player` lookup
+    still finds no seat to pick a real view for, so it must not fabricate
+    one. A single `:vote_tally` read returns exactly one of rule 4's view,
+    rule 9's view, or `%{}`; they never mix in one result.
 
 ## Out of scope
 
@@ -232,6 +395,30 @@ and recorded here, as the bead's `Done:` line asks.
   behaviour, not something this bead implements or could break (formerly rule 7).
 - **Any change to `WerewolfAsh.Games.Reactors.ResolveLynch`** (qss.5),
   including its moduledoc: reused exactly as qss.5 defines it.
+- **A second, differently-defined notion of "currently alive" for votes**:
+  not built. This bead's own calculation *does* filter `:vote` rows to a
+  living voter and a living target before calling `tally/1` (rule 4) — that
+  filtering is this bead's own code, not something `tally/1` or 27w.2's read
+  policy does for it (`tally/1` is qss.5's unchanged, aliveness-agnostic
+  grouping function; see rule 1). What this bead must not do is invent its
+  own, separate definition of what makes a vote "count" — the filter it
+  applies mirrors, exactly, the living-voter/living-target rule qss.5's own
+  `ResolveLynch` reactor applies before its own call to the same `tally/1`
+  (qss.5 rules 8-9), so a vote that counts toward the actual lynch always
+  matches a `counts: true` entry here, and vice versa. Every entry's `counts`
+  flag, for a living or a dead reader alike, is computed the same one way
+  (rule 1) — there is exactly one live-vs-dead decision in this bead's code,
+  reused for both views, never two that could drift apart.
+- **Changing or withdrawing a day vote while alive** (qss.21): not built
+  here. This bead reads whatever `:vote` row(s) exist for a phase at the
+  moment `:vote_tally` is read — however a player's latest choice comes to
+  be reflected there (an update in place, a replacement row, or a deletion on
+  withdrawal) is qss.21's mechanism to build. `:vote_tally`'s live-read
+  design (rule 1) already reflects whatever `:vote` rows exist at read time,
+  with no cache to invalidate, so a later change or withdrawal shows up on
+  the very next read with no change to this bead's code — but this bead does
+  not implement, validate, or test the change/withdraw action itself, and
+  `Depends on` does not name qss.21: nothing here requires it to exist first.
 - **A `player_id`/"viewer" argument on a new read action**, mirroring
   `Message.visible_to`'s pattern: deliberately not built. That pattern exists
   on `Message` because its filter needs to know *which* player's view to
@@ -253,7 +440,10 @@ and recorded here, as the bead's `Done:` line asks.
   dependency of its own; when voting "closes" is unaffected by this bead.
 - **GraphQL/API exposure** (27w.3): rule 8 only makes the calculation
   selectable by a future GraphQL field; no schema, query, or mutation is
-  added here.
+  added here. That bead will need to represent this one shape — a map from
+  target id to a list of `%{voter_id:, counts:}` entries, the same for every
+  reader — as whatever GraphQL type fits; which type, and how, is 27w.3's
+  call, not this one's.
 - **The mobile game-screen tally UI** (o25.5): out of scope for any domain
   bead.
 - **Any database migration**: a calculation is computed, not persisted; this
@@ -271,43 +461,98 @@ and recorded here, as the bead's `Done:` line asks.
   hands `calculate/3` an already-populated struct would never exercise that
   read at all, and would pass identically whether the read was authorized or
   not. A day phase seeded with both `:vote` and `:protect` rows, called with
-  an actor holding a seat in that game, tallies only the `:vote` rows in
-  `ResolveLynch.tally/1`'s exact shape (rules 1, 2); the identical phase
-  called with an actor holding no seat in the game returns `%{}` (rules 1,
-  5) — this is the specific case that the original, load/3-based design
-  would have failed, so the test must construct a genuine non-member actor
-  and assert `%{}`, not merely assert against a member and stop; a phase
-  with no `:vote` rows recorded at all (a night phase's `:kill` row, or a day
-  phase before any vote is cast) returns `%{}` for a member too (rules 2, 3,
-  and qss.5 rule 4's empty case). No test is needed for a `load/3` contract:
-  this calculation declares no relationship dependency (rule 1) and relies
-  on the default, no-op `load/3` that `use Ash.Resource.Calculation` already
-  provides (`deps/ash/lib/ash/resource/calculation/calculation.ex:181`).
-  When a test calls `calculate/3` directly and builds its own
-  `Ash.Resource.Calculation.Context`, it must set `authorize?: true`, or leave it
-  `nil`, which defaults to `true`, alongside the non-member actor. A context with
-  `authorize?: false` would hand the member-only tally to everyone and hide exactly
-  the leak rule 1 exists to prevent.
+  a living actor holding a seat in that game, returns rule 1's uniform map
+  filtered to `counts: true` entries only, matching `ResolveLynch.tally/1`'s
+  own grouping of the same `:vote` rows exactly (rules 1, 2, 4); the identical
+  phase called with an actor holding no seat in the game returns `%{}`
+  (rules 1, 5) — this is the specific case that the original, load/3-based
+  design would have failed, so the test must construct a genuine non-member
+  actor and assert `%{}`, not merely assert against a member and stop; a
+  phase with no `:vote` rows recorded at all (a night phase's `:kill` row, or
+  a day phase before any vote is cast) returns `%{}` for a member too (rules
+  2, 3, and qss.5 rule 4's empty case). A day phase whose `:vote` rows
+  include one cast by a player who is now dead and one naming a target who
+  is now dead — where the reading actor is neither of those two voters —
+  called with a **living** actor, returns only the entries whose voter and
+  target are both currently alive, `counts: true` (rule 4); the target named
+  only by that dead voter's, or dead target's, vote is absent from the map
+  as a key entirely, not present with an empty list (rule 4 — the specific
+  case a calculation that empties a target's entry list without deleting the
+  key would get wrong); the *identical* phase and votes, called with a
+  **dead** actor instead, returns every one of those rows as an entry,
+  including under that same target — the two non-counting ones marked
+  `counts: false` and any others `counts: true` (rule 9) — proving the same
+  underlying map (rule 1) is merely narrowed differently by rule 10, not
+  recomputed from scratch for each audience. Separately, the same day phase
+  called with the living actor who *is* the dead-target's voter: their own
+  entry appears in their own result, marked `counts: false`, even though a
+  plain `counts: true` filter alone would have excluded it — rule 4's
+  own-vote exception (owner decision 2026-09-13, card decision 6) is what
+  keeps it there for them specifically, and a different living actor reading
+  the identical phase still does not see that entry at all. Every one of
+  these calls must be made against seeded data shared within one test, not
+  built fresh per assertion, so the same underlying map is visibly narrowed
+  differently rather than recomputed — the specific bug this guards against
+  is a calculation that returns rule 4's narrowed view regardless of the
+  reader's own aliveness or identity. No test is needed for a `load/3`
+  contract: this calculation declares no relationship dependency (rule 1) and
+  relies on the default,
+  no-op `load/3` that `use Ash.Resource.Calculation` already provides
+  (`deps/ash/lib/ash/resource/calculation/calculation.ex:181`). When a test
+  calls `calculate/3` directly and builds its own
+  `Ash.Resource.Calculation.Context`, it must set `authorize?: true`, or
+  leave it `nil`, which defaults to `true`, alongside the non-member actor. A
+  context with `authorize?: false` would hand the member-only tally to
+  everyone and hide exactly the leak rule 1 exists to prevent.
 - `WerewolfAsh.Games.get_phase/1,2` (or `list_phases/0,1`) with
   `load: :vote_tally` — direct tests through the code interface, each
-  supplying a distinct `actor`: a living game member sees the full tally
-  (rule 4); a dead game member sees the identical full tally, including a
-  vote they cast before dying (rules 4, 6); an actor holding no seat in the
-  game, and a call with no actor at all, both return `%{}` (rule 5); the
-  acting player's own vote is present among the voters for their chosen
-  target (rule 6); reading `:vote_tally` on the game's current night phase
-  (seeded with a `:kill` row) returns `%{}` and the response never contains
-  the kill's actor or target under any key (rules 2, 3).
+  supplying a distinct `actor`: a living game member who is not one of the
+  phase's voters sees rule 4's view — only the entries that currently count;
+  a dead game member reading the *same* phase sees rule 9's unfiltered view —
+  every currently-cast vote in that phase, including one from a since-dead
+  voter or naming a since-dead target, each carrying the correct `counts`
+  flag (rules 4, 9, 10) — the test must seed both a counting and a
+  non-counting vote in the same phase and assert the dead reader's result
+  contains both, correctly marked, not merely that it is non-empty; the
+  target named only by the non-counting vote must be absent from the living
+  reader's map as a key entirely, not present with an empty entry list
+  (rule 4). A vote cast by a player who has since died is absent from a
+  *different*, still-living reader's view (rule 4) but present, marked
+  `counts: false`, when that now-dead voter reads the same phase's tally
+  *themselves* (rule 6) — the test must cast the vote, kill the voter, then
+  read `:vote_tally` twice against the same phase: once as a different,
+  still-living actor (entry absent) and once as the now-dead voter (entry
+  present, `counts: false`). A vote naming a target who has since died, cast
+  by a voter who is *still alive*, is absent from a *different* living
+  reader's view (rule 4), present and marked `counts: false` for a dead
+  reader (rule 9) — and present and marked `counts: false` for the voter
+  *themselves*, still alive, reading the tally (rule 4's own-vote exception,
+  owner decision 2026-09-13, card decision 6) — the test must read
+  `:vote_tally` as three distinct actors against the one seeded vote (a
+  different living member, a dead member, and the living voter themselves)
+  and assert all three results differ exactly this way. An actor holding no
+  seat in the game, and a call with no actor at all, both return `%{}`
+  regardless of which view they would otherwise get (rule 5). A still-living
+  voter whose chosen target is also still alive finds an entry with their own
+  `voter_id` and `counts: true` under that target (rule 6). Reading
+  `:vote_tally` on the game's current night phase (seeded with a `:kill` row)
+  returns `%{}` for both a living and a dead reader, and the response never
+  contains the kill's actor or target under any key for either (rules 2, 3).
 - `Ash.Resource.Info.public_calculation(WerewolfAsh.Games.Phase, :vote_tally)`
   (`deps/ash/lib/ash/resource/info.ex:582-588`) — direct test: returns the
   calculation, not `nil` (rule 8).
 - End to end, through the code interface: start a five-plus-player game, cast
   two or more `:vote` actions from different actors in the open day phase,
-  then compare `Games.get_phase!(day.id, load: :vote_tally, actor: <a game
-  member>)`'s result against `ResolveLynch.tally/1` computed directly over
-  the same phase's `:vote` actions fetched with `authorize?: false` — the two
-  must be identical, proving the calculation reuses qss.5's tally rather than
-  recomputing a different one (rule 1).
+  then compare `Games.get_phase!(day.id, load: :vote_tally, actor: <a living
+  game member>)`'s result, with each target's `counts: true` entries reduced
+  to their bare `voter_id`s, against `ResolveLynch.tally/1` computed directly
+  over the same phase's `:vote` actions fetched with `authorize?: false` —
+  the two must be identical, proving rule 4's `counts: true` subset is
+  exactly `tally/1`'s own grouping and not a separately-invented one (rule
+  1). A second end-to-end pass against that same scenario: kill one of the
+  voters (or one of the targets), then read `:vote_tally` as a dead game
+  member and confirm the result contains every currently-cast vote with the
+  correct `counts` flags, matching rule 9's definition (rules 9, 10).
 
 ### Existing tests this will break
 
@@ -366,16 +611,45 @@ Advisory only.
   implements only `calculate/3` (rule 1): one authorized read of
   `WerewolfAsh.Games.Action` per batch, filtered to `phase_id in <the
   batch's phase ids> and type == :vote`, passing
-  `Ash.Context.to_opts(context)` unchanged as that read's options; group the
-  results by `phase_id`; pass each phase's group to
-  `WerewolfAsh.Games.Reactors.ResolveLynch.tally/1`. Does not override
+  `Ash.Context.to_opts(context)` unchanged as that read's options, loading
+  (or otherwise making available) each row's `actor.alive` and
+  `target.alive` — needed for the `counts` flag below, since `Action` itself
+  carries no aliveness, only its `actor`/`target` `Player` do; group the
+  results by `phase_id`. For each phase, build the one uniform map rule 1
+  describes: filter the phase's rows to those whose `actor.alive` and
+  `target.alive` are both `true` — mirroring, not calling, qss.5's own
+  identical filter in `ResolveLynch` (this bead does not call into qss.5's
+  reactor or any of its private steps) — pass that subset to
+  `WerewolfAsh.Games.Reactors.ResolveLynch.tally/1` to get the set of
+  currently-counting `{target_id, voter_id}` pairs, then build the full map
+  from *every* row in the phase's group (not just the filtered subset),
+  grouped by target, each entry `%{voter_id:, counts:}` with `counts` set by
+  whether that `{target_id, voter_id}` pair is in `tally/1`'s result. Only
+  then does the reader's own aliveness (rule 10: look up whether the
+  context's own actor has a living or dead `Player` seat in that phase's
+  `game_id`) decide what's returned: the full map as-is for a dead seat
+  (rule 9), or, for a living seat, that same map with each target's entry
+  list filtered down to entries where `counts` is `true`, plus the reader's
+  own entry (`voter_id` equal to the context's own actor's player id) even
+  when its `counts` is `false` — dropping any target left with no entries at
+  all under that combined rule (rule 4); no seat at all collapses to `%{}`
+  either way (rule 5). Does not override
   `load/3` — the default no-op `use Ash.Resource.Calculation` already
   provides is correct here precisely because this calculation must not
-  declare a relationship dependency (rule 1). Its `@moduledoc` is where
-  Assumption 1's open-ballot decision gets recorded, since the coder cannot
-  write it to `CLAUDE.md`.
+  declare a relationship dependency (rule 1); loading `actor`/`target` is
+  not that dependency and does not carry rule 1's `authorize?: false` risk —
+  it is an ordinary `Ash.Query.load/2` (or equivalent) attached to the same
+  explicit, top-level `Action` read rule 1 already requires inside
+  `calculate/3`'s own body, which authorizes the loaded relationships the
+  normal way, the same as any other query-level load; only a relationship
+  declared through the *calculation's own* `load/3` callback takes the
+  dangerous, always-`authorize?: false` path rule 1 warns about, and this
+  calculation declares none. Its `@moduledoc` is where Assumption 1's
+  open-ballot decision gets recorded, since the coder cannot write it to
+  `CLAUDE.md`.
 - No changes to `lib/werewolf_ash/games/action.ex`, `player.ex`, `game.ex`,
-  `message.ex`, or any policy/authorizer/field-policy code — this bead
+  `message.ex`, or any policy/authorizer/field-policy code — this bead reads
+  `Player` (rule 10) but does not modify the `Player` resource itself; it
   touches only `Phase` and the new calculation module.
 - No changes to `lib/werewolf_ash/games.ex` — `get_phase`/`list_phases`
   already accept arbitrary `load:`/`actor:` options as any Ash code interface
