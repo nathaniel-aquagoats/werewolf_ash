@@ -4,7 +4,7 @@ Depends on: none
 
 ## For the owner
 
-**What changes.** Players will only see the games, rosters, and messages they actually have a seat in — a game you're not part of won't show up at all. While a game is in progress and a player is still alive: they see their own role; werewolves also see each other's roles and the pack's kill; the seer sees their own investigation results; the bodyguard sees their own protection; no other role or action detail leaks out. Once a player dies, they become a spectator for the rest of that game and can see everything in it — every role, every kill, investigation, protection, and shot — though they still cannot vote, act, or post. Once a game ends, every role is revealed to everyone who played it. Only the game's owner can start it, and every vote, kill, investigation, protection, shot, or chat message a player sends must be sent as themselves, never on someone else's behalf.
+**What changes.** Players will only see the games, rosters, and messages they actually have a seat in — a game you're not part of won't show up at all. While a game is in progress and a player is still alive: they see their own role; werewolves also see each other's roles and the pack's kill; the seer sees their own investigation results; the bodyguard sees their own protection; no other role or action detail leaks out. Once a player dies, they become a spectator for the rest of that game and can see everything in it — every role, every kill, investigation, protection, and shot — though they still cannot vote, act, or post. Once a game ends, every role is revealed to everyone who played it. Only the game's owner can start it or change its settings (role mix, specials, player bounds), and every vote, kill, investigation, protection, shot, or chat message a player sends must be sent as themselves, never on someone else's behalf.
 
 **Decisions.**
 1. **Decided:** a bodyguard's protection is visible only to the bodyguard who chose it, the same as the wolf kill and the seer's investigation — this closes off telling the wolves whom to avoid once protection can change during the day. Hunter shots stay visible to everyone, the same as votes.
@@ -13,8 +13,10 @@ Depends on: none
 4. **Decided:** seating another user into a game (useful today for testing/setup) stays open for now; tightening it belongs to the upcoming public sign-up feature.
 5. **Decided:** a player can see a fellow player's display name, not their email, in a shared game — this is what lets the roster show names instead of blanks.
 6. **Decided:** a dead player is a spectator in an afterlife for the rest of that game — once your own seat has died, you see everything in it: every role, every kill, investigation and protection, not just your own team's. You still cannot vote, act, or post once dead (unchanged).
+7. **Decided (asked in chat 2026-09-13, after qss.14 merged):** the same owner-only gate that protects `:start` also protects `:update_settings` (qss.14's owner-configurable role distribution, specials and player bounds) — only the game's owner may change a game's settings, and a non-owner or anonymous caller is refused with the same policy-class error `:start` now gives, not qss.14's own `ActorIsOwner`-validation error. qss.14 landed first, so this bead is the one that adds the policy layer for it (see rules 3a/3b).
+8. **Decided (asked in chat 2026-09-13, after the spec review found the promised error was unreachable):** the access rule refuses first. Verified by running it (not by reading it): with `Game.Validations.ActorIsOwner` as an ordinary validation, a non-owner and an anonymous caller both got the validation's own error, never the policy's — the policy never got a chance to run, because Ash checks a changeset's build-time validations before authorization. The fix is a production change, not just a spec correction: on both `:start` and `:update_settings`, `validate ActorIsOwner` becomes `validate ActorIsOwner, before_action?: true`, which defers it to run after authorization instead of before. A non-owner or anonymous caller now gets `Ash.Error.Forbidden` from the policy; the validation stays in place as a backstop for the one path that skips the policy entirely, an internal `authorize?: false` call by a non-owner, which still gets `Ash.Error.Invalid` from the validation. See rules 3a/3b.
 
-**Rule changes.** Add to the settled decisions: "a player may read a game, its roster, and its messages only while seated in it (any role, dead or alive); a player sees only their own role, except werewolves also see each other's, and once a game reaches `:finished` every role is visible to every seat (qss.19 adds the dawn reveal of dead players' roles); the night's kill is visible to werewolves only, an investigation result only to the seer who made it, and a protection only to the bodyguard who chose it; a dead player is a spectator for the rest of that game and sees everything in it regardless of the rules above, though they still cannot vote, act, or post; only the game's owner may start it; every vote, kill, investigation, protection, shot, or chat message must be submitted as the sender's own seat, never on another player's behalf."
+**Rule changes.** Add to the settled decisions: "a player may read a game, its roster, and its messages only while seated in it (any role, dead or alive); a player sees only their own role, except werewolves also see each other's, and once a game reaches `:finished` every role is visible to every seat (qss.19 adds the dawn reveal of dead players' roles); the night's kill is visible to werewolves only, an investigation result only to the seer who made it, and a protection only to the bodyguard who chose it; a dead player is a spectator for the rest of that game and sees everything in it regardless of the rules above, though they still cannot vote, act, or post; only the game's owner may start it or change its settings, refused with a policy-class error before either action's own `ActorIsOwner` validation runs; every vote, kill, investigation, protection, shot, or chat message must be submitted as the sender's own seat, never on another player's behalf."
 
 ## Assumptions
 
@@ -31,7 +33,7 @@ different reader could make differently.
    the `:join` action (`Player.Changes.ResolveGameByJoinCode`,
    `Player.Validations.GameInLobby` also guarding `:destroy`) plus
    `create_game`'s auto-seated owner. This bead adds one thing on top of
-   qss.3's `:start` (rule 3) and one explicit policy for `:join` (rule 6),
+   qss.3's `:start` (rule 3a) and one explicit policy for `:join` (rule 6),
    and otherwise reads Player/Game exactly as qss.3 shipped them.
 2. **"actions only as yourself" scopes to the `Action` resource** (the
    vote/kill/investigate/protect/shoot rows players submit during
@@ -116,6 +118,46 @@ different reader could make differently.
     throughout). 27w.9 and 27w.8 needed no rule changes beyond rule 13/17
     reconciliation (see rule 13) — every breakage entry below is re-verified
     against this commit, with the grep evidence to show it.
+11. **This revision is current against `main` `e6e6158`.** Since assumption
+    10's commit, three more beads merged: qss.18 (action target validity —
+    `Action.Validations.ActorAndTargetInGame`/`NoConsecutiveProtect`/
+    `TargetAlive`, PR merge `ad2c0ac`), qss.14 (owner-configurable game setup
+    — `Game`'s `:update_settings` action, `RoleAssignment.composition/2`,
+    `Player.Validations.GameNotFull`, PR merge `eba2f09`) and qss.5 (EndDay
+    reactor: lynch resolution — `Game.Changes.ResolveDayVote`,
+    `Reactors.ResolveLynch`, PR merge `99a4615`). Every rule, Acceptance item
+    and breakage entry below has been re-verified against this commit, by
+    grep or by reading the file, not carried over from the previous
+    revision unchecked. Three corrections of substance came out of that
+    re-verification, each documented at its own rule/entry below rather than
+    here: `:update_settings` now gets the same owner-only policy as `:start`
+    (rule 3b, decision 7 above); rule 4's `deal_roles.ex` forced-consequence
+    paragraph is rewritten because qss.14 replaced the guarded
+    `composition/1` it described with an unguarded `composition/2` (the
+    actual failure mode of an unfixed read is traced fresh, not assumed —
+    see rule 4); and rule 8's `resolve_lynch.ex` paragraph is rewritten from
+    a conditional ("if this file exists") to a statement of fact, since
+    qss.5 merged the file with the fix already in place (see rule 8).
+12. **This revision responds to a spec review that found two blockers, both
+    verified against the running code, not just read.** First: rule 3
+    (now split into 3a/3b) originally claimed the policy on `:start`/
+    `:update_settings` ran before `ActorIsOwner`'s validation and changed
+    the non-owner/anonymous failure class to `Forbidden`; it does not,
+    because Ash checks a changeset's build-time validations before
+    authorization — confirmed by running a scratch resource shaped the same
+    way, not by reading the source (see decision 8 and rules 3a/3b, which
+    also add the production fix this implies: `before_action?: true` on
+    both `ActorIsOwner` validations). Second: `join_game` was claimed
+    unaffected by rule 6 (staying open); it silently breaks instead, because
+    `Player.Changes.ResolveGameByJoinCode`'s own `Games.get_game_by_join_code/1`
+    call (`lib/werewolf_ash/games/player/changes/resolve_game_by_join_code.ex:20`)
+    passes no options at all, so it runs with `actor: nil` under rule 1's
+    new `Game` read policy and never finds the game a not-yet-seated joiner
+    is trying to join — confirmed both by grep (this was the one call this
+    spec's own "every Games.get/list call missing `authorize?`" audit
+    missed, because it is missing every option, not just `authorize?`) and
+    by running an equivalent scratch resource (see rule 4's new paragraph
+    and rule 6).
 
 ## Goal
 
@@ -124,7 +166,7 @@ policies instead of being wide open to any caller that reaches the domain:
 players can only read games and rosters they belong to, only their own role
 (or a fellow werewolf's), only wolf-vote and their-own-investigate action
 detail under the extra rules the game requires, only the owner can start a
-game, and every write that identifies "who did this" (`send_message`,
+game or change its settings, and every write that identifies "who did this" (`send_message`,
 `Action` creation) is bound to the caller's own seat rather than trusting a
 supplied id. `WerewolfAsh.Accounts.User` gets the same treatment tidied up
 per its own review follow-ups: an explicit, tested deny for anything outside
@@ -146,21 +188,111 @@ its existing sign-in/current-user surface, a token-revocation test, and a
    not silently default-deny them. `:end_day`/`:end_night` in particular are
    never called by a request actor — only by the not-yet-built scheduler —
    so they get no actor-based restriction here or anywhere else in this bead.
-3. `Game`'s `:start` action gains a policy —
+3a. `Game`'s `:start` action gains a policy —
    `authorize_if relates_to_actor_via(:owner)` or an equivalent expression —
-   layered on top of qss.3's `Game.Validations.ActorIsOwner` validation
-   *without changing that validation*. A non-owner or anonymous actor is now
-   forbidden by the policy; an owner actor sees the same `start` behavior as
-   before this bead (qss.3's validation was already satisfied by the same
-   condition, so nothing about a correctly-called `start` changes). Because
-   `owner_id` is already present on the loaded `Game` struct `start` is
-   called with, the policy resolves statically and runs *before* qss.3's
-   validation gets a chance to — so the non-owner/anonymous failure mode
-   changes class, from qss.3's `Ash.Error.Invalid{errors: [%InvalidAttribute{
-   field: :owner_id}]}` to `Ash.Error.Forbidden{errors: [%Ash.Error.Forbidden.Policy{}]}`.
-   This is a real, intentional change to `start`'s negative-case contract,
-   not a side effect to work around — see the fix to games_test.exs's
-   "requires the owner as actor..." test below.
+   layered on top of qss.3's `Game.Validations.ActorIsOwner` validation. A
+   non-owner or anonymous actor is now forbidden by the policy; an owner
+   actor sees the same `start` behavior as before this bead.
+
+   **Production change, by owner decision (decision 8 above): `start`'s
+   `validate ActorIsOwner` becomes `validate ActorIsOwner, before_action?:
+   true`.** Without this, the policy is unreachable — confirmed by running
+   a scratch resource shaped exactly like `Game`'s `:start` (a policy plus
+   an ordinary, build-time `ActorIsOwner`-style validation): both a
+   stranger actor and a nil actor got the validation's own
+   `Ash.Error.Invalid{errors: [%Ash.Error.Changes.InvalidAttribute{field:
+   :owner_id}]}`, never the policy's error, because Ash resolves a
+   changeset's build-time validations before authorization runs
+   (`deps/ash/lib/ash/actions/update/update.ex:19`'s first clause returns
+   an invalid changeset's errors before the authorization step at `:339`).
+   `owner_id` being already present on the loaded `Game` struct does let
+   the policy resolve statically, but that was never the reason the
+   validation ran second — deleting the policy entirely, with the
+   validation still build-time, would not fail a single test. Moving the
+   validation to `before_action?: true` defers it to run *after*
+   authorization instead (confirmed by re-running the same scratch
+   resource with only that option added: stranger and nil actor both now
+   get `Ash.Error.Forbidden{errors: [%Ash.Error.Forbidden.Policy{}]}`, the
+   owner still succeeds, and a stranger actor called with `authorize?:
+   false` — bypassing the policy entirely — still gets the validation's own
+   `Ash.Error.Invalid`, the backstop decision 8 describes). `start` is
+   already `require_atomic? false` (`lib/werewolf_ash/games/game.ex:109`),
+   which a `before_action?: true` validation requires (it cannot run
+   atomically) — no change needed there.
+
+   `start`'s other validations, `MinimumPlayers` and `RoleCompositionFits`,
+   are **not** moved to `before_action?: true` and stay exactly as they
+   are: ordinary, build-time validations that still run before
+   authorization, same as always. So the precise contract is: a non-owner
+   or anonymous actor calling `start` on an otherwise-valid request (a
+   well-formed, >= 5-player lobby whose composition fits) is forbidden with
+   `Ash.Error.Forbidden{errors: [%Ash.Error.Forbidden.Policy{}]}`; a
+   request that would *also* fail `MinimumPlayers`/`RoleCompositionFits`
+   still gets that validation's ordinary `Ash.Error.Invalid`, regardless of
+   who is calling, because those validations run first and are unaffected
+   by who the actor is. This is a real, intentional change to `start`'s
+   owner/anonymous negative-case contract for an otherwise-valid request —
+   see the fix to games_test.exs's "requires the owner as actor..." test
+   below, which is already set up with a well-formed >= 5-player lobby and
+   needs no setup change, only its assertion corrected.
+3b. **Extended 2026-09-13, by owner decision (decisions 7 and 8 above), now
+   that qss.14 has merged and landed first:** `Game`'s `:update_settings`
+   action (qss.14's own action, code interface `update_game_settings`)
+   gains the identical policy and the identical production change, for the
+   identical reason, layered on qss.14's own `ActorIsOwner` validation on
+   that same action (`lib/werewolf_ash/games/game.ex`, the
+   `:update_settings` action block): `validate ActorIsOwner` becomes
+   `validate ActorIsOwner, before_action?: true`. `update_settings` is
+   already `require_atomic? false` (`lib/werewolf_ash/games/game.ex:83`).
+   A non-owner or anonymous actor is forbidden with
+   `Ash.Error.Forbidden{errors: [%Ash.Error.Forbidden.Policy{}]}`; an owner
+   actor sees `:update_settings` behave exactly as qss.14 shipped it.
+
+   `:update_settings`'s other validations — `attribute_equals(:state,
+   :lobby)`, `PositivePlayerBounds`, `MinNotAboveMax`,
+   `ManualWerewolfCountValid`, `CompositionFitsAtCap` and
+   `MaxPlayersNotBelowSeated` (the last already `before_action?: true` in
+   its own right, for its own, unrelated locking reason — see its
+   moduledoc) — are **not** touched by this rule and stay exactly as qss.14
+   shipped them: every one but `MaxPlayersNotBelowSeated` is an ordinary,
+   build-time validation that still runs before authorization. So, exactly
+   as rule 3a: a non-owner or anonymous actor calling `update_settings` on
+   an otherwise-valid request (the game still `:lobby`, the settings
+   themselves internally consistent, seated count under any new
+   `max_players`) is forbidden with `Ash.Error.Forbidden`; a request that
+   would *also* fail `attribute_equals(:state, :lobby)`,
+   `PositivePlayerBounds`, `MinNotAboveMax`, `ManualWerewolfCountValid` or
+   `CompositionFitsAtCap` still gets that validation's ordinary
+   `Ash.Error.Invalid` first, regardless of who is calling, since those five
+   stay build-time and unaffected by this rule. `MaxPlayersNotBelowSeated`
+   is the one exception worth naming, not because this rule touches it, but
+   because it was already `before_action?: true` before this bead: a
+   request that would also fail it now gets `Ash.Error.Forbidden` first for
+   a non-owner. Authorization (`Ash.Actions.Update.do_run/4`'s `authorize/2`
+   step, `deps/ash/lib/ash/actions/update/update.ex:339`) runs as its own
+   pipeline stage strictly before `commit/3`, and every `before_action?`
+   hook — `ActorIsOwner`'s new one and `MaxPlayersNotBelowSeated`'s
+   existing one alike — runs inside `commit/3`, so the policy always
+   decides before either before_action? validation gets a chance to,
+   regardless of their relative order. The existing tests pinning
+   `MaxPlayersNotBelowSeated`'s own behavior (`game_not_full_test.exs`,
+   `max_players_not_below_seated_test.exs`) call it directly on a bare
+   changeset with no actor/policy in play at all, so this ordering
+   question does not reach them; no new test is needed to pin it either,
+   since nothing in this bead's Acceptance claims a specific ordering
+   between the two before_action? validations, only that the policy
+   precedes both, which rule 3a's own pin already covers generically. This
+   is the one
+   policy `Game` needs beyond `:start`'s: every other Game action qss.14
+   added or touched (the validations themselves,
+   `RoleAssignment.composition/2`) is a game rule about what settings are
+   *valid*, not about who may change them, and stays out of this bead's
+   scope (see Out of scope). See games_test.exs's "update_game_settings"
+   describe block, "rejects a caller other than the game's own owner (rule
+   2)" test, below (already set up with a game still in `:lobby`, no setup
+   change needed, only its assertion corrected), for the one existing test
+   this fixes, and the Acceptance section for the new "no actor at all"
+   case that test does not yet cover.
 4. `Player` gains `authorizers: [Ash.Policy.Authorizer]`. It gets a single
    `policy action_type(:read)`, restricted the same way as `Game`'s: an
    actor may read a `Player` row only while they themselves hold a seat —
@@ -180,12 +312,12 @@ its existing sign-in/current-user surface, a token-revocation test, and a
 
    A second, identical forced consequence, this time of gating the bare
    `:read` action: `Game.Changes.DealRoles.deal/2`
-   (`lib/werewolf_ash/games/game/changes/deal_roles.ex:27`) calls
+   (`lib/werewolf_ash/games/game/changes/deal_roles.ex:28`) calls
    `Games.list_players!(query: [filter: [game_id: game.id]])` with no
-   `opts` at all — unlike its own sibling call two lines later (`:33`,
+   `opts` at all — unlike its own sibling call two lines later (`:34`,
    `Games.update_player(player, %{role: role}, opts)`), which already
    forwards the `opts` `deal/2` was given and must stay exactly as it is.
-   Once this rule exists, line 27 needs `authorize?: false` added directly
+   Once this rule exists, line 28 needs `authorize?: false` added directly
    (not `opts` forwarded) — this is a game rule fetching the roster it is
    about to deal from, not an access check, the same reasoning
    `AuthorMayPost.load_author/1` already uses, and it matches
@@ -193,8 +325,161 @@ its existing sign-in/current-user surface, a token-revocation test, and a
    same query one file over (`minimum_players.ex:16`). Forwarding `opts`
    instead would be the wrong fix here: `deal/2` must find every seated
    player regardless of whether the actor who called `start` happens to
-   still be one of them. Without this fix, `start` deals zero players to
-   anyone, silently, in production — not just in tests.
+   still be one of them.
+
+   **Rewritten 2026-09-13: the failure mode of leaving line 28 unfixed has
+   changed since the last revision, and the old wording ("`start` deals zero
+   players silently") is no longer accurate — verify this for yourself
+   rather than trust either description.** qss.14 replaced
+   `RoleAssignment.composition/1`, which this paragraph used to cite for its
+   `when player_count >= 5` guard, with `composition/2`
+   (`lib/werewolf_ash/games/game/role_assignment.ex:23`), whose only guard
+   is `when is_integer(player_count)` — no minimum at all, by design: its
+   own moduledoc says composition is "only ever called once `start` has
+   already confirmed the composition fits the actual seated count," so it
+   "enforces no minimum of its own." Left unfixed, line 28's policy-filtered
+   read (`actor: nil`) returns `[]` regardless of the real roster size, so
+   `deal/2` calls `composition(0, game)`. Traced against the actual
+   attribute defaults every existing pin test uses (`seer_enabled`,
+   `bodyguard_enabled` and `hunter_enabled` all default `true`,
+   `role_distribution_mode` defaults `:automatic`): `specials(settings)`
+   returns 3 roles, `werewolf_count(0, settings)` is
+   `max(1, div(0, 4)) == 1`, so `villagers = 0 - 3 - 1 == -4`, and
+   `List.duplicate(:villager, -4)` — not `Enum.zip/2` — is what actually
+   raises, with `FunctionClauseError` (List.duplicate/2 requires a
+   non-negative count), still inside `deal/2`'s own `after_action` hook,
+   still before any zipping happens. This was confirmed by direct
+   execution against this commit (`RoleAssignment.composition(0, %{
+   role_distribution_mode: :automatic, manual_werewolf_count: nil,
+   seer_enabled: true, bodyguard_enabled: true, hunter_enabled: true})`
+   raises `FunctionClauseError, "no function clause matching in
+   List.duplicate/2"`), not assumed from the diff. So for every settings
+   configuration currently exercised by any pin test — every one of them
+   uses `game()`'s defaults, none override the specials or switch to manual
+   mode with zero wolves — an unfixed line 28 still fails loudly, exactly
+   as it did before qss.14, just from a different function for a different
+   reason: a coder who fixes the field-policy break in a pin test's own
+   `list_players!`/`get_player!` call (rule 5, below) but skips line 28
+   still gets an immediate crash. **Do not "fix" that crash by adding a
+   guard back to `composition/2`** — qss.14 removed it deliberately, so that
+   a game with `min_players` set below 5 (qss.14's own feature) can still
+   deal roles to a legitimately small roster; a coder confirms this against
+   `role_composition_fits_test.exs`'s own "a below-4 seat count with every
+   special disabled passes (rule 8's guard removal)" test before touching
+   that guard at all. The empty roster is still the bug, not the guard's
+   absence.
+
+   A genuinely *silent* failure — `composition/2` returning `[]` and
+   `deal/2` completing having dealt nothing, no crash at all — is possible
+   only in a settings configuration no pin test currently uses: every
+   special disabled *and* manual mode with `manual_werewolf_count: 0`
+   (confirmed the same way: `composition(0, %{role_distribution_mode:
+   :manual, manual_werewolf_count: 0, seer_enabled: false,
+   bodyguard_enabled: false, hunter_enabled: false}) == []`). The fix is
+   identical either way — `authorize?: false` on line 28 — but a coder must
+   not treat "the existing tests still crash if I skip this" as proof the
+   fix is optional or as a substitute for actually making it: a differently
+   configured game (or a future test using one) hits the silent path, not
+   the crash, and ships with zero roles dealt.
+
+   **A third forced consequence, added this revision after the spec review
+   found it: gating `Game`'s `:read` action (rule 1) also breaks joining a
+   game, and this spec previously said rule 6 left `:join` unaffected —
+   that was wrong.** `Player.Changes.ResolveGameByJoinCode.change/3`
+   (`lib/werewolf_ash/games/player/changes/resolve_game_by_join_code.ex:17-20`)
+   ignores its own `_context` entirely and calls `Games.get_game_by_join_code(join_code)`
+   with no options at all — not even a forwarded `opts`, unlike every other
+   internal read this spec already audited. Once rule 1 exists, this read
+   runs with `actor: nil` under the domain's `authorize: :by_default`
+   default, and a user who is not yet seated in the game they are trying to
+   join — which, by definition, is *every* caller of `:join`, seated or not
+   — can never pass rule 1's "holds a seat in it" condition for a game they
+   don't hold a seat in yet. The lookup returns `{:error, _}` unconditionally,
+   `ResolveGameByJoinCode` reports "does not match any game" on `:join_code`,
+   and `join_game`/`join_game!` fail for every join code, valid or not, in
+   production, not just in tests. Confirmed by running an equivalent scratch
+   resource (a `Game`-shaped ETS resource with a seat-gated `:read` policy
+   and a `get_by`-style lookup called with no options): the lookup returned
+   `Ash.Error.Invalid{errors: [%Ash.Error.Query.NotFound{}]}` before the
+   fix and `{:ok, record}` after adding `authorize?: false`. This is the
+   same "game rule, not an access check" reasoning as `deal_roles.ex:28`
+   and `CheckWin`'s read above: resolving a join code to the `Game` it
+   names is not itself a read the *joining* actor needs to already be
+   authorized for — `Player`'s own `:join` policy (rule 6, unchanged, still
+   open) is what actually decides whether the seat gets created. The fix is
+   `authorize?: false` added directly to this one call; the public
+   `get_game_by_join_code` code interface itself (rule 1's own grant) is
+   unaffected and stays seat-gated — this is a different, internal call
+   inside a different action's own change, not the same read qss.3's
+   `get_game_by_join_code/1,2` exposes.
+
+   Every `Games.get_*`/`Games.list_*` and `Ash.get`/`Ash.read`/`Ash.load`
+   call across all of `lib/` was re-grepped this revision, specifically to
+   catch this shape (a call with *no* options at all, not just a missing
+   `authorize?:` — the previous revision's audit only looked for the
+   latter):
+
+   ```
+   $ grep -rnE 'Games\.(get|list)_[a-z_]*!?\(' lib/ --include='*.ex'
+   lib/werewolf_ash/games/reactors/resolve_lynch.ex:57:        Games.list_actions!(
+   lib/werewolf_ash/games/reactors/resolve_lynch.ex:85:    run fn %{game_id: game_id}, _context -> Games.get_game(game_id, authorize?: false) end
+   lib/werewolf_ash/games/reactors/resolve_lynch.ex:135:    with {:ok, target} <- Games.get_player(target_id, authorize?: false) do
+   lib/werewolf_ash/games/game/changes/deal_roles.ex:28:    players = Games.list_players!(query: [filter: [game_id: game.id]])
+   lib/werewolf_ash/games/game/validations/max_players_not_below_seated.ex:14:  `Games.get_game(game_id, authorize?: false, lock: :for_update)`, the same
+   lib/werewolf_ash/games/game/validations/max_players_not_below_seated.ex:38:    case Games.get_game(game_id, authorize?: false, lock: :for_update) do
+   lib/werewolf_ash/games/game/validations/max_players_not_below_seated.ex:41:          Games.list_players!(query: [filter: [game_id: game.id]], authorize?: false)
+   lib/werewolf_ash/games/game/validations/role_composition_fits.ex:18:      Games.list_players!(query: [filter: [game_id: game.id]], authorize?: false)
+   lib/werewolf_ash/games/game/validations/minimum_players.ex:16:      Games.list_players!(query: [filter: [game_id: changeset.data.id]], authorize?: false)
+   lib/werewolf_ash/games/action/changes/apply_kill.ex:36:      with {:ok, target} <- Games.get_player(action.target_id, opts),
+   lib/werewolf_ash/games/action/changes/apply_kill.ex:44:    with {:ok, phase} <- Games.get_phase(action.phase_id, opts),
+   lib/werewolf_ash/games/action/changes/apply_kill.ex:47:        Games.list_actions!(
+   lib/werewolf_ash/games/action/changes/apply_kill.ex:64:    case Games.list_phases!(
+   lib/werewolf_ash/games/action/changes/record_investigation_result.ex:37:    case Games.get_player(target_id, authorize?: false) do
+   lib/werewolf_ash/games/action/validations/shoot_requires_pending_hunter.ex:40:           Games.get_player(actor_id, authorize?: false),
+   lib/werewolf_ash/games/action/validations/shoot_requires_pending_hunter.ex:41:         {:ok, %{state: :hunter_pending}} <- Games.get_game(game_id, authorize?: false) do
+   lib/werewolf_ash/games/action/validations/no_consecutive_protect.ex:38:    with {:ok, phase} <- Games.get_phase(phase_id, authorize?: false),
+   lib/werewolf_ash/games/action/validations/no_consecutive_protect.ex:49:    case Games.list_phases!(
+   lib/werewolf_ash/games/action/validations/no_consecutive_protect.ex:63:    case Games.list_actions!(
+   lib/werewolf_ash/games/action/validations/actor_alive.ex:26:        case Games.get_player(actor_id, authorize?: false) do
+   lib/werewolf_ash/games/action/validations/actor_and_target_in_game.ex:31:        case Games.get_phase(phase_id, authorize?: false) do
+   lib/werewolf_ash/games/action/validations/actor_and_target_in_game.ex:53:        case Games.get_player(player_id, authorize?: false) do
+   lib/werewolf_ash/games/action/validations/type_requires_phase_and_role.ex:49:        case Games.get_phase(phase_id, authorize?: false) do
+   lib/werewolf_ash/games/action/validations/type_requires_phase_and_role.ex:67:        case Games.get_player(actor_id, authorize?: false) do
+   lib/werewolf_ash/games/action/validations/target_alive.ex:26:        case Games.get_player(target_id, authorize?: false) do
+   lib/werewolf_ash/games/player/changes/resolve_game_by_join_code.ex:20:    case Games.get_game_by_join_code(join_code) do
+   lib/werewolf_ash/games/player/validations/game_not_full.ex:11:  `Games.get_game(game_id, authorize?: false, lock: :for_update)` has locked
+   lib/werewolf_ash/games/player/validations/game_not_full.ex:43:    case Games.get_game(game_id, authorize?: false, lock: :for_update) do
+   lib/werewolf_ash/games/player/validations/game_not_full.ex:49:          Games.list_players!(query: [filter: [game_id: game_id]], authorize?: false)
+   lib/werewolf_ash/games/player/validations/game_in_lobby.ex:34:        case Games.get_game(game_id, authorize?: false) do
+   $ grep -rn "Ash\.\(get\|get!\|read\|read!\|load\|load!\)(" lib/ --include="*.ex"
+   lib/werewolf_ash/games/message/validations/author_may_post.ex:36:    case Ash.get(Player, author_id, authorize?: false) do
+   lib/werewolf_ash/games/game/changes/advance_phase.ex:61:      Ash.load!(game, [:current_phase, :last_phase_number], opts)
+   lib/werewolf_ash/games/game/changes/resolve_day_vote.ex:34:    case Ash.load!(game, :current_phase, Context.to_opts(context)) do
+   lib/werewolf_ash/games/game/changes/resolve_day_vote.ex:50:    with {:ok, %{current_phase: phase}} <- Ash.load(game, [:current_phase], opts) do
+   lib/werewolf_ash/games/player/validations/user_has_name.ex:28:        case Ash.get(User, user_id, authorize?: false) do
+   ```
+
+   Every hit but `resolve_game_by_join_code.ex:20` already carries
+   `authorize?: false` explicitly, or forwards `opts`/`context` from a
+   changeset built with them (`apply_kill.ex`'s two `Games.get_player`/
+   `Games.get_phase` calls, already covered under rule 8 — forwarding is
+   correct there, since a `Phase` load carries no policy either way and the
+   `Player` load is the kill's own attributed effect, not an access check;
+   `advance_phase.ex`/`resolve_day_vote.ex`'s `Ash.load` calls, which only
+   ever load `Phase` relationships, unaffected by any policy this spec
+   adds regardless of what `opts` they carry). `resolve_game_by_join_code.ex:20`
+   is the one genuine gap this shape of grep catches that the previous
+   revision's audit missed.
+
+   The `Games.list_*!` hits are accounted for elsewhere in this spec:
+   `deal_roles.ex:28` passes `query:` only and is rule 4's `DealRoles` fix;
+   `resolve_lynch.ex:57` and `no_consecutive_protect.ex:49`/`:63` are
+   multi-line calls whose `authorize?: false` sits on a following line;
+   `apply_kill.ex:47`/`:64` forward `opts` and are covered by rule 8's
+   `protected?/2` fix; `role_composition_fits.ex:18`, `minimum_players.ex:16`,
+   `max_players_not_below_seated.ex:41` and `game_not_full.ex:49` carry
+   `authorize?: false` on the line itself; `max_players_not_below_seated.ex:14`
+   and `game_not_full.ex:11` are moduledoc text.
 5. `Player` gains a field policy on `:role`: visible when the row is the
    reading actor's own seat, or when the reading actor holds a `:werewolf`
    seat in the same game *and* the row's own role is also `:werewolf`
@@ -291,9 +576,21 @@ its existing sign-in/current-user surface, a token-revocation test, and a
    nothing else in this bead's rules covering it. `add_player`/
    `create_game`'s `players` argument keep seating arbitrary users;
    `join_game`/`update_player`/`remove_player` keep their current callers
-   working, including with no actor at all — no existing test needs any
-   change for this rule, since staying open preserves today's behavior
-   exactly.
+   working, including with no actor at all — `Player`'s own policy needs no
+   test change for this rule, since staying open preserves today's `Player`
+   behavior exactly.
+
+   **Correction, this revision: this is not the same as "no existing
+   `join_game` test needs any change."** Rule 6 leaving `Player`'s `:join`
+   open says nothing about whether `join_game` keeps *working* once rule 1
+   exists — it doesn't, without rule 4's new `resolve_game_by_join_code.ex`
+   fix (above): every `join_game`/`join_game!` call in the suite, actored
+   or not, fails once `Game` gains a read policy, until that one line gets
+   `authorize?: false`. With that production fix in place, every existing
+   `join_game`/`join_game!` call keeps working exactly as before, actor or
+   no actor, which is what this rule's own "no change" claim actually
+   means — see the games_test.exs entries below for the specific call
+   sites this was checked against.
 7. `Action` gains `authorizers: [Ash.Policy.Authorizer]`. Its `:create` action
    and qss.4's separate `:kill` action (code interface `create_kill_action`)
    each gain the same policy: the row's `actor_id` must reference a `Player` whose
@@ -427,7 +724,7 @@ its existing sign-in/current-user surface, a token-revocation test, and a
    `CheckWin` and `deal_roles.ex` reads already use. This one query, inside
    `protected?/2`, needs `authorize?: false` added directly, in place of the
    forwarded `opts` (the same "replace, don't forward" shape as
-   `deal_roles.ex:27`'s own fix under rule 4). Its sibling calls in the same
+   `deal_roles.ex:28`'s own fix under rule 4). Its sibling calls in the same
    function are unaffected and keep forwarding `opts` unchanged: `Phase`
    carries no policy at all (Out of scope), so `Games.get_phase`/
    `Games.list_phases!`'s behavior does not depend on actor either way; and
@@ -435,30 +732,72 @@ its existing sign-in/current-user surface, a token-revocation test, and a
    the kill's own effect, correctly attributed to the werewolf who caused
    it, not a read this rule governs.
 
-   **Conditional forced consequence, added 2026-09-13 per the qss.5 spec
-   review:** qss.5 (day-vote resolution; spec PR #9, not merged as of this
-   revision, and not a dependency of this bead in either direction) adds
-   `lib/werewolf_ash/games/reactors/resolve_lynch.ex`, which reads a day
-   phase's `:vote` `Action` rows with no actor to tally the lynch. `:vote`
-   gets no type-specific narrowing (above), but it still sits behind rule
-   8's own opening baseline — an actor must hold a seat in the row's game at
-   all — so a `nil` actor is filtered to `[]` exactly like every other
-   unauthenticated `Action` read in this spec, the same failure shape as
-   `check_win.ex`'s and `deal_roles.ex`'s reads (rule 4) and `apply_kill.ex`'s
-   (above): lynch resolution would silently count zero votes once `Action`
-   gains its authorizer, not just in a test. This spec cannot pin the exact
-   line or verify the fix is already in place — `resolve_lynch.ex` does not
-   exist on `main` as of this revision, so there is nothing here to grep.
-   Whichever of 27w.2 and qss.5 is implemented **second** must handle it,
-   the same "second bead reconciles" shape this spec already uses for
-   qss.14's `:update_settings` (NOTES): if `resolve_lynch.ex` already exists
-   when this bead is implemented, grep it for its vote-tallying read and add
-   `authorize?: false` there directly if it is missing; if this bead lands
-   first, qss.5's own spec and its coder are responsible for adding
-   `authorize?: false` to that read when `resolve_lynch.ex` is written,
-   citing this rule as the reason. Do not skip the grep on the assumption
-   that qss.5's spec already accounts for it — verify against the actual
-   file at whichever point it exists.
+   **Settled 2026-09-13: qss.5 has merged, and the fix this paragraph used
+   to describe conditionally is already in place — verified, not assumed.**
+   qss.5 (day-vote resolution; merged as `99a4615`, not a dependency of this
+   bead in either direction) added `lib/werewolf_ash/games/reactors/resolve_lynch.ex`,
+   whose `:load_votes` step reads a day phase's `:vote` `Action` rows to
+   tally the lynch:
+
+   ```elixir
+   Games.list_actions!(
+     load: [:actor, :target],
+     query: [filter: [phase_id: phase_id, type: :vote]],
+     authorize?: false
+   )
+   ```
+
+   (`lib/werewolf_ash/games/reactors/resolve_lynch.ex:55-61`). The base read
+   already carries `authorize?: false`, so `:vote` — which gets no
+   type-specific narrowing (above) but still sits behind rule 8's own
+   opening baseline — is not filtered to `[]` the way an unauthenticated
+   `Action` read elsewhere in this spec would be; this file needs no
+   production change for rule 8.
+
+   The same read also `load: [:actor, :target]` in one call, and those are
+   `Player` reads (rule 4) — worth checking independently, since a load
+   inside an otherwise-unauthorized read is not automatically unauthorized
+   itself. It is, here: `authorize?: false` on a read sets
+   `query.context.private.authorize?` via
+   `Ash.Actions.Helpers.add_context/2`'s `private_context = Map.new(Keyword.take(opts,
+   [:actor, :authorize?, :tracer]))` (`deps/ash/lib/ash/actions/helpers.ex:331-332`),
+   and every relationship load `Ash.Actions.Read.Relationships` builds for
+   it carries the identical value forward — **corrected this revision: the
+   related query is a *new* `Ash.Query`, not the same struct reused**, but
+   it is explicitly seeded with the parent query's own `authorize?`/`actor`.
+   `related_query/4`'s non-lazy branch (the one actually exercised here,
+   since `:actor`/`:target` are not already loaded on a freshly-read
+   `Action`) pipes the fresh related query through
+   `Ash.Actions.Read.for_read(read_action, nil, arguments, domain: domain,
+   authorize?: query.context[:private][:authorize?], actor:
+   query.context[:private][:actor], ...)`
+   (`deps/ash/lib/ash/actions/read/relationships.ex:335`, `authorize?:`
+   read off the *parent* query's context); the lazy-reuse branch a few
+   lines above it does the identical thing at `:275`
+   (`Ash.Query.for_read(read_action_name, arguments, domain: domain,
+   authorize?: query.context[:private][:authorize?], ...)`). Either way,
+   the new related query's own `authorize?`/`actor` are copied from the
+   parent's, not inherited by sharing the same struct. So the `authorize?: false` on
+   `:load_votes`'s own `Games.list_actions!` call already covers its
+   `:actor`/`:target` loads too, by the same mechanism this spec's own rule
+   5 paragraph relies on for a field policy's `expr` crossing a
+   relationship (deps citations there, same file). No further fix is
+   needed anywhere in `resolve_lynch.ex` for this bead's rules; the two
+   other reads inside the same reactor (`:reload_game`'s
+   `Games.get_game(game_id, authorize?: false)` and `apply_lynch/1`'s
+   `Games.get_player/Games.update_player` calls, both already
+   `authorize?: false`) were already correct for rules 1 and 4
+   respectively, for the same "game rule, not an access check" reasoning
+   this spec uses throughout.
+
+   `resolve_day_vote_test.exs` and `resolve_lynch_test.exs` (qss.5's own
+   test files) still need their *own* fixes below — not because
+   `resolve_lynch.ex` itself is broken, but because both files call
+   `Games.create_action!`/`Games.get_player!` directly, with no actor, to
+   set up and verify the games they hand to the reactor, and those calls
+   run through `Action`'s and `Player`'s own new policies exactly like any
+   other actor-less test call in this spec. See "Existing tests this will
+   break" below.
 9. `Action`'s `:update` action (`update_action`, which records a result)
    stays exactly as open as it is today (`authorize_if always()`) — not
    named by this bead.
@@ -611,10 +950,16 @@ its existing sign-in/current-user surface, a token-revocation test, and a
 - Everything qss.3 owns: `join_game`'s/`leave`'s own business logic
   (`Player.Changes.ResolveGameByJoinCode`, `Player.Validations.GameInLobby`),
   role dealing (`Game.Changes.DealRoles`), the minimum-players check, and
-  `Game.Validations.ActorIsOwner` itself. This bead only adds the extra
-  `:start` policy (rule 3) and the explicit open policy on `:join` (rule 6)
-  on top of qss.3's work, and otherwise treats qss.3's Player/Game shape as
-  a given (see Assumption 1).
+  `Game.Validations.ActorIsOwner` itself, **except** the one-line
+  `authorize?: false` fix to `ResolveGameByJoinCode`'s own
+  `get_game_by_join_code` lookup (rule 4) that keeps `:join` working at
+  all once rule 1 exists — a forced consequence of this bead's own read
+  policy, not a change to qss.3's join logic itself (the lookup still
+  resolves the identical game by the identical join code; only its
+  authorization mode changes). This bead only adds that fix, the extra
+  `:start`/`:update_settings` policy (rules 3a/3b) and the explicit open
+  policy on `:join` (rule 6) on top of qss.3's work, and otherwise treats
+  qss.3's Player/Game shape as a given (see Assumption 1).
 - 27w.9's `:name` attribute itself, its own set-your-own-name mutation/
   policy, and its nameless-user-cannot-create/join-a-game validation. This
   bead only supplies the read grant (rule 17) that makes a name — once
@@ -623,9 +968,17 @@ its existing sign-in/current-user surface, a token-revocation test, and a
 - qss.4's `Action` validations (role, aliveness, phase, one action per
   phase). Rules 7-8 are purely about *who* may create/read an `Action` row,
   never about whether its contents make sense as a game move.
-- qss.14's owner-configurable game settings, and any restriction on
-  `update_game`/`destroy_game` to the owner — left open per rule 2/
-  Assumption 5.
+- qss.14's owner-configurable game settings are no longer entirely out of
+  scope: rule 3b now adds the owner-only *gate* on `:update_settings` (see
+  decisions 7-8). What stays out of scope is everything else qss.14 built —
+  `PositivePlayerBounds`, `MinNotAboveMax`, `ManualWerewolfCountValid`,
+  `CompositionFitsAtCap`, `MaxPlayersNotBelowSeated`,
+  `RoleAssignment.composition/2`'s own formula, and `Player.Validations.GameNotFull` —
+  none of which this bead touches; they decide what settings/rosters are
+  *valid*, not who may change them. `update_game`/`destroy_game` stay open
+  to any actor, left open per rule 2/Assumption 5, unchanged by decision 7:
+  `update_game` (name/timezone/windows) and `destroy_game` were never part
+  of qss.14's settings surface and decision 7 does not extend to them.
 - qss.17's game-over role reveal is no longer out of scope: the owner folded
   it into this bead on 2026-09-13 (qss.17's own NOTES record the decision),
   and rule 5 now builds the `:finished` exception directly. What's still
@@ -666,18 +1019,67 @@ its existing sign-in/current-user surface, a token-revocation test, and a
   `WerewolfAsh.Games.get_game_by_join_code/1,2` — direct tests: a seated
   player (any role, dead or alive) can read their game; a user with no seat
   in it, and an anonymous actor, get nothing back, not an error.
-- `WerewolfAsh.Games.start_game/1,2,3` — direct tests: the owner actor
-  starts the game exactly as before this bead; a non-owner actor and an
-  anonymous actor are forbidden with `Ash.Error.Forbidden{errors: [%Ash.Error.Forbidden.Policy{}]}`
-  (not qss.3's `ActorIsOwner`-validation `Ash.Error.Invalid`), independent
-  of a well-formed, >= 5-player lobby.
+- **Rule 3a**, `WerewolfAsh.Games.start_game/1,2,3` — direct tests, every
+  one set up as an *otherwise-valid* request (a well-formed, >= 5-player
+  lobby whose composition fits, exactly what `ready/0`'s existing fixture
+  already builds): the owner actor starts the game exactly as before this
+  bead; a non-owner actor and an anonymous actor are forbidden with
+  `Ash.Error.Forbidden{errors: [%Ash.Error.Forbidden.Policy{}]}` (not
+  qss.3's `ActorIsOwner`-validation `Ash.Error.Invalid`). Assert on error
+  class/struct, not on message text. Two more tests pin the production fix
+  itself, each engineered to fail for a different reason if the fix
+  regresses: an otherwise-valid request from a non-owner still gets
+  `Ash.Error.Forbidden` (this fails if `validate ActorIsOwner`'s
+  `before_action?: true` is ever reverted to build-time, or if the policy
+  is replaced by one that authorizes the non-owner, because the validation
+  then returns `Ash.Error.Invalid` first; deleting the policy outright is
+  caught by the owner-succeeds test instead whenever no other policy still
+  applies to the action, because Ash then denies every actor by default,
+  the owner included, so keep both tests); and
+  a non-owner actor called with `authorize?: false` (bypassing the policy
+  entirely) still gets `Ash.Error.Invalid{errors:
+  [%Ash.Error.Changes.InvalidAttribute{field: :owner_id}]}` from the
+  validation backstop, which fails if the validation is ever deleted
+  instead of just reordered. A request that would *also* fail
+  `MinimumPlayers`/`RoleCompositionFits` (fewer than 5 players, say) still
+  gets that validation's own `Ash.Error.Invalid` regardless of actor —
+  covered by the existing "requires at least 5 seated players" test, which
+  needs no change (rules 3a's policy adds nothing to what that test
+  already exercises with the owner as actor).
+- **Rule 3b**, `WerewolfAsh.Games.update_game_settings/1,2,3` — direct
+  tests, the identical shape as rule 3a's above, every one set up as an
+  otherwise-valid request (the game still `:lobby`, the settings
+  internally consistent): the owner actor changes settings exactly as
+  qss.14 shipped it; a non-owner actor **and** an anonymous actor (the
+  anonymous case is new — no existing test calls `update_game_settings`
+  with no actor at all) are both forbidden with `Ash.Error.Forbidden{errors:
+  [%Ash.Error.Forbidden.Policy{}]}` (not qss.14's own `ActorIsOwner`-validation
+  `Ash.Error.Invalid`); the same two production-fix pins as rule 3a's (an
+  otherwise-valid non-owner request stays `Forbidden` only while both the
+  policy and the `before_action?: true` move are in place; a non-owner
+  actor called with `authorize?: false` still gets the validation's
+  `Ash.Error.Invalid` backstop). A request that would *also* fail
+  `attribute_equals(:state, :lobby)` or one of qss.14's own settings
+  validations still gets that validation's `Ash.Error.Invalid` regardless
+  of actor — covered by the existing "rejects a change once the game has
+  already left the lobby (rule 3)" test (qss.14's own rule numbering, not
+  this spec's), which needs no change. Assert on error class/struct, not
+  on message text. This replaces games_test.exs's existing "rejects a
+  caller other than the game's own owner (rule 2)" test's stale assertion
+  (see "Existing tests this will break" below) and adds the missing
+  no-actor case next to it.
 - `WerewolfAsh.Games.list_players/0,1`, `WerewolfAsh.Games.get_player/1,2`,
   `WerewolfAsh.Games.list_living_players/1` — direct tests: a fellow game
   member reads a `Player` row (living or dead, via any of the three); a
   user with no seat in that game cannot. `WerewolfAsh.Games.join_game/2,3`
-  is unaffected by this bead (rule 6 keeps `:join` open) — a direct test
+  is **not** unaffected by this bead, despite rule 6 keeping `Player`'s
+  `:join` policy open — rule 1's `Game` read policy breaks it, and rule 4's
+  `resolve_game_by_join_code.ex` fix (`authorize?: false` on its internal
+  `get_game_by_join_code` lookup) is what keeps it working; a direct test
   that a user with no prior seat can still join a lobby game by its
-  join_code with no actor, exactly as qss.3 left it.
+  join_code with no actor, exactly as qss.3 left it, is the pin for that
+  fix — it fails (every join gets `:join_code` "does not match any game")
+  without it.
 - The `Player.role` field policy — direct tests (via `Ash.load!`/
   `Ash.read!` and asserting on the resulting value, or `Ash.can_see_fields?/3`):
   a player reads their own role; a werewolf reads a fellow werewolf's role; a
@@ -802,17 +1204,24 @@ filtered to empty — a test already expecting "not found" needs no change.
 
 None of the fixes below touch the production modules being tested
 (`CheckWin`'s `count/1`/`decide/1`, `Visibility`, `AuthorMayPost`'s `check/3`,
-`AdvancePhase`, `Clock` — this last pair already uses `authorize?: false`
-throughout and needs nothing extra); they thread `authorize?: false` through
-call sites exercising a *different* contract than the new policies, exactly
-as `games_test.exs:27` already does for loading a `Game`'s `owner`. The
-genuine production fixes are `check_win.ex`'s read step and
-`deal_roles.ex`'s `list_players!` call (both per rule 4), and
-`apply_kill.ex`'s `protected?/2` read (per rule 8) — plus, conditionally,
-`resolve_lynch.ex`'s vote read if that file exists by the time this bead is
-implemented (qss.5, unmerged as of this revision; see rule 8's own entry).
+`AdvancePhase`, `Clock`, `ResolveLynch`'s `tally/1`/`decide/1` — these last
+three already use `authorize?: false` throughout, or (`ResolveLynch`) never
+call the domain interface unauthorized to begin with, and need nothing
+extra); they thread `authorize?: false` through call sites exercising a
+*different* contract than the new policies, exactly as `games_test.exs:32`
+already does for loading a `Game`'s `owner`. The genuine production fixes
+are `check_win.ex`'s read step, `deal_roles.ex`'s `list_players!` call and
+`resolve_game_by_join_code.ex`'s `get_game_by_join_code` call (all three
+per rule 4), `apply_kill.ex`'s `protected?/2` read (per rule 8), and —
+added this revision, after the spec review found rule 3's original claim
+unreachable — `game.ex`'s `validate ActorIsOwner, before_action?: true` on
+both `:start` and `:update_settings` (rules 3a/3b), without which the
+policy each gains is unreachable for a non-owner/anonymous actor.
+`resolve_lynch.ex` needs no production fix at all — it already merged with
+`authorize?: false` in place (see rule 8's own entry, settled, not
+conditional, in this revision).
 
-- `test/support/generators.ex`'s `player/1`: the `after_action` hook
+- `test/support/generators.ex`'s `player/1`, line 66: the `after_action` hook
   (`Games.update_player!(player, %{role: role})`, added by qss.3 once
   `Player`'s `:create` stopped accepting `role` directly) runs with no
   actor. Its return is what `generate/1`/`generate_many/2` ultimately hand
@@ -823,161 +1232,306 @@ implemented (qss.5, unmerged as of this revision; see rule 8's own entry).
   site across the suite is fixed without touching them individually. `game/1`
   needs no change: `Game` carries no field policy, and its `:create` stays
   open (rule 2), so field-level auth has nothing to restrict either way.
-- `test/werewolf_ash/games_test.exs`, re-grepped against `main` `034a775`
-  (`grep -n "Games\.\(get_game\|list_players\|get_player\|get_phase\|create_action\|start_game\|add_player\|update_player\|join_game\|get_action\)" test/werewolf_ash/games_test.exs`
-  — line numbers below are current, not the qss.3-era ones from the previous
-  revision; 27w.9 added ~94 lines ahead of and inside this file (the
-  "games"/"players"/"join_game" describe blocks each gained nameless-user
-  tests) and qss.4 reshaped the `describe "actions"` block, both shifting
-  everything after them):
-  - line 65, `Games.get_game!(game.id, load: :players).players` — needs
-    `authorize?: false` (rule 1); line 67's `is_nil(player.role)` depends on
-    this same fix. (Unmoved from the previous revision — the two new
-    "nameless owner"/"nameless co-player" tests 27w.9 added come *after*
-    this test, at lines 137-174, and touch no gated read.)
-  - line 73, the positive-match `Games.get_game_by_join_code!(game.join_code)`
-    — needs `authorize?: false` (rule 1); line 74's negative (unknown code)
-    assertion is unaffected either way. (Unmoved.)
-  - line 238, `Games.get_game!(game.id, load: [:current_phase,
-    :last_phase_number])` — needs `authorize?: false` (rule 1). (Was line
-    199; shifted +39 by the two new "games" tests above it.)
-  - line 348, `Games.get_game!(game.id).state == :day` — needs
-    `authorize?: false` (rule 1). (Was line 309; same +39 shift.)
-  - lines 356-362, "requires the owner as actor, and leaves every player
-    roleless": both negative-case assertions are stale, not just missing a
-    fix. Replace
-    `assert %Ash.Error.Changes.InvalidAttribute{field: :owner_id} = error`
-    (both the no-actor call at 356-357 and the `actor: stranger` call at
-    359-362) with
-    `assert {:error, %Ash.Error.Forbidden{errors: [%Ash.Error.Forbidden.Policy{}]}} = ...`
-    — rule 3's policy now forbids both before qss.3's `ActorIsOwner`
-    validation runs (see rule 3). (Was lines 317-323.)
-  - line 364, `Games.get_game!(game.id).state == :lobby` (same test) — needs
-    `authorize?: false` (rule 1). (Was line 325.)
-  - line 366, the `for player <- Games.list_players!(query: [filter:
-    [game_id: game.id]])` loop (same test) — needs `authorize?: false`
-    (rule 4). (Was line 327.)
-  - line 382, `Games.get_game!(game.id).state == :lobby` ("requires at least
-    5 seated players") — needs `authorize?: false` (rule 1). (Was line 343.)
-  - line 392, `Games.list_players!(query: [filter: [game_id: game.id]])`
-    ("deals exactly one role...") — needs `authorize?: false` (rule 4);
-    line 396's `Enum.map(& &1.role) |> Enum.frequencies()` on that same
-    result also depends on rule 5's field policy, which the same
-    `authorize?: false` bypasses along with the resource-level gate. No new
-    test needs writing for `deal_roles.ex`'s own forced-consequence fix
-    (rule 4): once this line's `authorize?: false` is added so the test can
-    see the real roster at all, it still fails if `deal_roles.ex:27` isn't
-    separately fixed — and it fails loudly, not silently: that line's
-    `list_players!` returns `[]`, and `RoleAssignment.composition/1` is
-    guarded `when player_count >= 5`, so `composition(0)` raises
-    `FunctionClauseError` inside the `after_action` hook. This test is
-    already the pin; a coder who applies this fix mechanically without also
-    fixing `deal_roles.ex:27` gets an immediate crash here. **Do not
-    "fix" that crash by loosening `composition/1`'s guard** — the guard is
-    correct (qss.3 defines its contract only for 5 or more players, and
-    rule 9 of qss.3 blocks any smaller start); the empty roster is the bug.
-    (Was line 353.)
-  - line 419, `Games.list_players!(query: [filter: [game_id:
-    game.id]]) |> length() == 2` ("adds and removes players one at a time")
-    — needs `authorize?: false` (rule 4). (Missed in the previous revision:
-    this test is distinct from "a seat cannot be given up..." below, whose
-    `list_players!`/`get_player!` calls *were* already listed.)
-  - line 416, `assert is_nil(player.role)` off `player =
-    Games.add_player!(game.id, alice.id)` (same test) — needs
-    `authorize?: false` on the `add_player!` call (rule 5: the field policy
-    applies to a single-record create's own result, not just to a later
-    read). (Was line 377.)
-  - line 423, `Games.list_players!(query: [filter: [game_id: game.id]]) |>
-    Enum.map(& &1.user_id) == [game.owner_id]` (same test, after
-    `remove_player!`) — needs `authorize?: false` (rule 4). (New to this
-    list, same reason as line 419.)
-  - line 454, `[player | _] = Games.list_players!(query: ...)` ("a seat
-    cannot be given up once the game has left the lobby") — needs
-    `authorize?: false` (rule 4). (Was line 415.)
-  - line 460, `Games.get_player!(player.id).id` (same test) — needs
-    `authorize?: false` (rule 4); `.id` itself is a primary key and always
-    field-visible, but the row is invisible at all without this fix. (Was
-    line 421.)
-  - line 466-467, `player = Games.update_player!(player, %{role: :seer});
-    assert player.role == :seer` ("updates role and aliveness") — needs
-    `authorize?: false` on that `update_player!` call (rule 5, same
-    mechanism as line 416). (Was line 428.)
-  - line 479, `Games.list_players!(query: [filter: [game_id: game.id]]) ==
-    []` ("are deleted along with their game") — **no change**: `game` was
-    just destroyed and its players cascade-deleted, so this is genuinely
-    empty, the same shape as a policy-filtered empty result.
-  - Lines 482-506 (27w.9's three new tests: "refuses to seat a nameless
-    user...", "seats a named user...", "two players may share..."): **no
-    change** — the two "refuses" tests' follow-up `list_players!`
-    (lines 489, 529) are genuinely empty (`UserHasName` rejected the seat
-    before any row was created), and the other two only read `.user_id`/
-    `.id` off `add_player!`/`join_game!` results, neither of which rule 5
-    governs.
-  - line 518, `assert is_nil(player.role)` off `player =
-    Games.join_game!(game.join_code, user.id)` ("seats a user in the game
-    named by its join_code") — needs `authorize?: false` on the
-    `join_game!` call (rule 5, same mechanism as line 416/466). (Was line
-    453.)
-  - line 608, `Games.get_game!(game.id, load: :phases).phases |>
+- `test/werewolf_ash/games_test.exs`, re-grepped fresh against `e6e6158`
+  (`grep -n "Games\.\(get_game\|list_players\|get_player\|get_phase\|create_action\|start_game\|add_player\|update_player\|join_game\|get_action\|list_actions\|update_game_settings\|create_phase\|update_phase\)" test/werewolf_ash/games_test.exs`
+  — every line number below is fresh, not carried over: the file grew from
+  ~690 lines in the previous revision to 1043, gaining a whole
+  "day vote resolution (werewolf_ash-qss.5)" describe block (426-488), an
+  "update_game_settings" describe block (744-908, qss.14) and an
+  "end to end: owner-configured role composition" describe block (910-943,
+  qss.14), on top of the qss.3-era blocks this spec already tracked):
+  - **"games" (15-180):** line 32,
+    `Games.get_game!(game.id, load: [:owner, :players], authorize?: false)`
+    ("creates a game with players through the code interface") — **already
+    fixed**, not a break: this call already carries `authorize?: false` (the
+    comment above it, "User carries a policy authorizer, so loading the
+    owner needs authorize?: false here," shows it was added for rule 17's
+    `User` grant, but it covers rules 1/4/5 here for free). This corrects
+    the previous revision's claim that this test's `get_game!` needed a
+    fix — re-verify before assuming either way.
+    Line 70, `Games.get_game!(game.id, load: :players).players` ("applies
+    sensible defaults...") — needs `authorize?: false` (rule 1); line 72's
+    `is_nil(player.role)` depends on the same fix, and rule 5's field
+    policy applies to a relationship-loaded `Player` row exactly as it does
+    to a direct one. Line 78, `Games.get_game_by_join_code!(game.join_code)`
+    ("looks a game up by its join code") — needs `authorize?: false`
+    (rule 1); line 79's negative (unknown code) case is unaffected. Nothing
+    else in this block reads a Game/Player field this bead governs
+    (`update_game`/`create_game` stay open per rule 2, and none of them
+    load `:players`/`:owner`).
+  - **"phase transitions" (182-424):** the `ready/1` helper (188-193) makes
+    no `Games.` call. Every `start_game!`/`start_game` call in this block
+    already carries `actor: owner` (200, 253, 269, 278, 291, 305, 314, 325,
+    343, 347, 398), except the two negative cases in "requires the owner as
+    actor..." below. `end_day!`/`end_night!` calls throughout (214, 228,
+    258, 283, 295, 338/341/350's error-case `end_day`/`end_night`) need no
+    fix (rule 2). Line 243,
+    `Games.get_game!(game.id, load: [:current_phase, :last_phase_number])`
+    — needs `authorize?: false` (rule 1). Line 353,
+    `Games.get_game!(game.id).state == :day` ("rejects transitions that do
+    not match the current state") — needs `authorize?: false` (rule 1).
+    **"requires the owner as actor, and leaves every player roleless"
+    (357-374):** this test's setup (`ready/0`) already seats 5 players, so
+    it is already the "otherwise-valid request" rule 3a's Acceptance
+    requires — no setup change needed, only the assertions. Both
+    negative-case assertions are stale, not just missing a fix. Replace
+    `assert %Ash.Error.Changes.InvalidAttribute{field:
+    :owner_id} = error` at line 362 (the no-actor call, 361) and at line
+    367 (the `actor: stranger` call, 364-365) with `assert {:error,
+    %Ash.Error.Forbidden{errors: [%Ash.Error.Forbidden.Policy{}]}} = ...` —
+    rule 3a's policy now forbids both, *and* its `before_action?: true`
+    move now runs `ActorIsOwner`'s validation after that policy decides,
+    not before it (see rule 3a; verified by running a scratch resource,
+    not by reading the source — a coder should not trust the previous
+    revision's claim that the policy alone was enough). Line 369,
+    `Games.get_game!(game.id).state == :lobby`
+    (same test) — needs `authorize?: false` (rule 1). Line 371, the
+    `for player <- Games.list_players!(query: [filter: [game_id:
+    game.id]]) do` loop (same test) — needs `authorize?: false` (rule 4).
+    Line 387, `Games.get_game!(game.id).state == :lobby` ("requires at
+    least 5 seated players") — needs `authorize?: false` (rule 1); line 382's
+    `start_game` is an error case unrelated to this bead's policies
+    (`InvalidChanges`, `MinimumPlayers`, both build-time and unaffected by
+    who the actor is — rule 3a does not change this test, since its actor
+    is already the owner). **"refuses a configuration the
+    seated players cannot satisfy (rule 9)" (390-405):** line 395 calls
+    this file's own `update_settings!/2` helper (10-13), which already
+    passes `actor: %{id: game.owner_id}` — unaffected by rule 3b's new
+    `:update_settings` policy (decisions 7-8), no change. Lines 403-404,
+    `Games.list_players!(...) |> Enum.all?(&is_nil(&1.role))` — needs
+    `authorize?: false` for the assertion to actually exercise the real
+    roster (rules 4/5); note this one does **not** fail outright if left
+    unfixed — a policy-filtered `[]` makes `Enum.all?/2` vacuously `true`,
+    so the test would pass either way, just not for the reason it claims
+    to. **"deals exactly one role to every seated player once the owner
+    starts the game" (407-419):** line 410, `Games.start_game!(game, actor:
+    owner)` — already correctly actored, but this is the call that reaches
+    `DealRoles.deal/2`'s `after_action` hook; if line 28 of
+    `deal_roles.ex` is left unfixed, **this line itself raises
+    `FunctionClauseError`** (see rule 4's rewritten paragraph for why, and
+    why that is a change from the previous revision's description of the
+    crash site). Line 414, `Games.list_players!(query: [filter: [game_id:
+    game.id]])` feeding `Enum.map(& &1.role) |> Enum.frequencies()` — needs
+    `authorize?: false` (rules 4 and 5) for the test to observe the real
+    dealt roles; this remains the primary pin for `deal_roles.ex:28`'s own
+    fix, alongside `deal_roles_test.exs`'s two tests below. The `phases/1`
+    helper (421-423) makes a `Phase` read only — no policy, no fix.
+  - **"day vote resolution (werewolf_ash-qss.5)" (426-488) — entirely new
+    since the previous revision, not previously audited.** The
+    `started_day_game/0` helper (430-441): line 434,
+    `Games.start_game!(game, %{now: ...}, actor: owner)` — already
+    correctly actored. Line 437, `Games.list_players!(query: [filter:
+    [game_id: game.id]]) |> Map.new(&{&1.role, &1})` — needs
+    `authorize?: false` (rules 4 and 5): left unfixed, `players` is `%{}`
+    and every test below that destructures `p.villager`/`p.werewolf`/etc.
+    raises `KeyError`, the same single-choke-point shape as
+    `action_test.exs`'s own `started_game/0`. The `open_day_phase/1` helper
+    (443): `Games.get_game!(game.id, load: :current_phase).current_phase`
+    — needs `authorize?: false` (rule 1). Every `Games.create_action!(day.id,
+    p.X.id, p.Y.id, :vote)` call in this block's four tests (449, 450, 462,
+    463, 480, 481) — this describe block is testing lynch resolution end to
+    end via `end_day!` -> `ResolveDayVote` -> `ResolveLynch`, not rule 7's
+    "actions only as yourself," so the same choice this spec already makes
+    for `resolve_lynch_test.exs`'s `vote!` helper applies here too: fix
+    with `authorize?: false`, not a real per-player actor — using a real
+    actor would work too but is not required by any rule this describe
+    block exercises. `Games.end_day!(game, %{now: @dusk})` calls (452, 465,
+    483) need no fix (rule 2). `Games.get_player!(p.X.id).alive` calls
+    (455, 469, 485) — need `authorize?: false` (rule 4; `.alive` carries no
+    field policy). `Games.list_phases!(...)` (471) is a `Phase` read — no
+    policy, no fix.
+  - **"players" (490-625):** setup (491-493) makes no `Games.` call.
+    **"adds and removes players one at a time" (495-511):** line 498,
+    `Games.add_player!(game.id, alice.id)` — needs `authorize?: false`
+    (rule 5: line 502's `is_nil(player.role)` reads the single-record
+    create result). Line 505, `Games.list_players!(...) |> length() == 2`
+    — needs `authorize?: false` (rule 4). Line 507, `Games.remove_player!`
+    — no fix (rule 6). Line 509, `Games.list_players!(...) |>
+    Enum.map(& &1.user_id) == [game.owner_id]` — needs `authorize?: false`
+    (rule 4). **"a user can only hold one seat per game" (513-523)** and
+    **"rejects role as an unrecognized input" (525-529):** no fix — every
+    call only reads `.user_id`/is an error case, neither governed by rule 5.
+    **"a seat can be given up while the game is in the lobby" (531-536):**
+    no fix — `Games.get_player(player.id)` at 535 is genuinely not-found
+    after a real `remove_player`. **"a seat cannot be given up once the
+    game has left the lobby" (538-547):** line 540, `[player | _] =
+    Games.list_players!(...)` — needs `authorize?: false` (rule 4). Line
+    542, `start_game!(game, actor: owner)` — already actored. Line 546,
+    `Games.get_player!(player.id).id` — needs `authorize?: false` (rule 4;
+    `.id` is always field-visible, but the row is invisible without this
+    fix). **"updates role and aliveness" (549-559):** line 552,
+    `Games.update_player!(player, %{role: :seer})` feeding `player.role ==
+    :seer` — needs `authorize?: false` (rule 5). Line 555,
+    `Games.update_player!(player, %{alive: false})` feeding
+    `refute player.alive` — no fix (`.alive` has no field policy). **"are
+    deleted along with their game" (561-566):** line 565,
+    `Games.list_players!(...) == []` — needs `authorize?: false` (rule 1):
+    with no actor the read policy returns `[]` whether or not the players
+    were deleted, so the assertion would pass vacuously. **The three 27w.9 nameless/named/shared-name
+    tests (568-592):** the "refuses" test's follow-up `list_players!`
+    (575) needs `authorize?: false` (rule 1): the seat is never created,
+    but with no actor the read returns `[]` either way, so without the
+    fix the assertion passes vacuously; the others only read
+    `.user_id`/`.id` off `add_player!`/`join_game!` results and need no fix. **"accepts
+    add_player below max_players (rule 16)" (594-600)** and **"add_player
+    is never refused on max_players when it is nil" (618-624)** — no fix
+    (only `.user_id` read; `update_settings!` at 595 already actored).
+    **"refuses add_player once max_players is already seated (rule 16)"
+    (602-616) — new since the previous revision (qss.14).** Line 603,
+    `update_settings!` — already actored. Line 615, `Games.list_players!(...)
+    |> length() == 4` — needs `authorize?: false` (rule 4).
+  - **"join_game" (627-742) — every `join_game`/`join_game!` call site in
+    this block re-verified this revision against rule 4's production fix
+    (`authorize?: false` on `resolve_game_by_join_code.ex:20`), not just
+    against rules 5/6 as before.** Without that fix, every single one of
+    these calls fails with `:join_code` "does not match any game" — none
+    of the classifications below is "no fix" *in spite of* that; they are
+    "no *test* fix," because the production fix in rule 4 is what keeps
+    every one of these calls succeeding exactly as it does today, and none
+    of them needs `authorize?: false`/`actor:` added at the *call site*
+    itself, unlike a `Games.get_game`/`Games.list_players` read. Line 632,
+    `Games.join_game!(game.join_code, user.id)` feeding line 636's
+    `is_nil(player.role)` ("seats a user...") — needs `authorize?: false`
+    on this call (rule 5, unrelated to rule 4's fix: the field policy on
+    the returned `Player`'s `.role`). Line 654 (`named.id`, "seats a named
+    user via join...") and lines 663-664 (`alice.id`/`bob.id`, "two players
+    may share...") — no fix: each only reads `.user_id`/`.id` off the
+    return, neither governed by rule 5. Line 703 ("joining twice fails...")
+    and lines 929-930 (the "end to end: owner-configured role composition"
+    describe block's two seating calls) — no fix: the return is discarded
+    in all three. "an unknown join_code..." (668-677) and "rejects role as
+    an unrecognized input..." (692-698) — no fix: both pass with or
+    without rule 4's `ResolveGameByJoinCode` fix. "a join_code for a game
+    that has already left the lobby..." (679-690, `ready()`/`start_game!`
+    at 680-681 already actored) — no test change, but it depends on that
+    fix: without it the lookup's own `:join_code` error
+    (`InvalidAttribute`, as the unknown-code test shows) comes back instead
+    of, or alongside, the `InvalidArgument` the test matches, so
+    `errors: [error]` fails. "refuses to seat a nameless user..." (639-648)
+    — the `join_game` call needs no change but depends on the same fix
+    (without it the lookup's `:join_code` error joins the `:name` error
+    and `errors: [error]` no longer matches); line 647,
+    `Games.list_players!(query: [filter: [user_id: nameless.id]]) == []`,
+    needs `authorize?: false` (rule 1): with no actor the read policy
+    returns `[]` whether or not a player was created, so the assertion
+    would pass vacuously.
+    Line 716 ("accepts a join below max_players (rule 11)") and line 739
+    ("a join is never refused on max_players when nil") — no fix
+    (`update_settings!` at 713/already actored where relevant; only
+    `.user_id` read). **"refuses a join once
+    max_players is already seated (rule 11)" (720-732) — new since the
+    previous revision (qss.14).** Line 722, `update_settings!` — already
+    actored. Line 731, `Games.list_players!(...) |> length() == 4` — needs
+    `authorize?: false` (rule 4).
+  - **"update_game_settings" (744-908) — entirely new since the previous
+    revision (qss.14), and the one describe block rule 3b's own creation
+    reaches directly.** "the owner may change any
+    subset..." (745-759), "rejects a change once the game has already left
+    the lobby (rule 3)" (773-781, qss.14's own rule numbering, not this
+    spec's — that test's actor is already the owner, so rule 3b changes
+    nothing about it: the game is deliberately *not* an otherwise-valid
+    request there, and `attribute_equals(:state, :lobby)` stays build-time,
+    so it still fires first regardless of actor), "rejects nil for any of
+    the five non-nullable settings (rule 1)" (783-789), "rejects an
+    attribute outside the seven settings..." (791-797), "enforces rules 4-7
+    through the action" (799-845), "rule 17: setting max_players exactly
+    equal..." (875-894) and "rule 17: max_players left nil is never
+    refused..." (896-903) — no fix: every call already passes `actor:
+    owner`, and `Game` carries no field policy, so nothing read off an
+    `update_game_settings!` result is gated by anything this bead adds.
+    **"rejects a caller other than the game's own owner (rule 2)"
+    (761-771) — stale, not just missing a fix.** Its setup (a freshly
+    generated game, `state: :lobby`, `max_players: 6` alone) is already an
+    otherwise-valid request, so it needs no setup change. Line 767,
+    `Games.update_game_settings(game, %{max_players: 6}, actor: stranger)`
+    — line 769's `assert %Ash.Error.Changes.InvalidAttribute{field:
+    :owner_id} = error` must become `assert {:error, %Ash.Error.Forbidden{
+    errors: [%Ash.Error.Forbidden.Policy{}]}} = ...`, the identical change
+    rule 3a makes to `start_game`'s equivalent test, and for the identical
+    reason: rule 3b's policy now forbids this, *and* its `before_action?:
+    true` move on `:update_settings`'s own `ActorIsOwner` validation is
+    what actually lets the policy's answer win — without that move, this
+    stranger call would still resolve to the validation's `Invalid`, not
+    the policy's `Forbidden` (verified by running a scratch resource; see
+    rule 3a). Line 770, `Games.get_game!(game.id,
+    authorize?: false)` — already fixed, no change. This test still has no
+    case for "no actor at all" — the Acceptance section above adds that as
+    a new test, since no existing call anywhere in the suite calls
+    `update_game_settings` with no actor. **"rule 17: refuses to set
+    max_players below the seated count" (847-873):** line 868,
+    `Games.list_players!(...) |> length() == 3` — needs `authorize?: false`
+    (rule 4); line 869's `Games.get_game!(game.id, authorize?: false)` is
+    already fixed.
+  - **"end to end: owner-configured role composition" (910-943) — entirely
+    new since the previous revision (qss.14).** Lines 914-932
+    (`create_game!`, `update_game_settings!` at 922 already actored,
+    `join_game!`/`add_player!`) need no fix — none of them read a
+    field-policy-governed value off their own return. Line 934,
+    `Games.start_game!(game, actor: owner)` — already correctly actored;
+    like the "phase transitions" block's "deals exactly one role..." test,
+    this call reaches `DealRoles.deal/2` and would also raise
+    `FunctionClauseError` if `deal_roles.ex:28` is left unfixed (this
+    game's settings — manual mode, 2 wolves, seer disabled, bodyguard/hunter
+    left at their `true` defaults — make `villagers` negative on an empty
+    roster the same way the default-settings case does); this is a
+    secondary observation, not a second required pin, since the "phase
+    transitions" test already covers rule 4's own Acceptance item. Line 937,
+    `Games.list_players!(query: [filter: [game_id: game.id]])` feeding
+    `Enum.map(& &1.role) |> Enum.frequencies()` at line 938 — needs
+    `authorize?: false` (rules 4 and 5).
+  - **"phases" (945-985):** `create_phase!`/`create_phase`/`update_phase!`
+    calls (951, 952, 964, 970, 973, 977, 980) — `Phase` carries no policy,
+    no fix. Line 959, `Games.get_game!(game.id, load: :phases).phases |>
     Enum.map(& &1.id)` ("are numbered per game and listed in order") —
-    needs `authorize?: false` (rule 1). (Was line 514; not a new break, the
-    describe block just moved.)
-  - line 644, `Games.create_action!(ctx.phase.id, ctx.alice.id, ctx.bob.id,
-    :vote)` ("records who did what to whom in a phase") — needs
-    `authorize?: false` (rule 7).
-  - line 652, `Games.get_player!(ctx.alice.id, load: [:performed_actions,
-    :targeted_by_actions])` (same test) — needs `authorize?: false` for the
-    `Player` read (rule 4) *and* because `:performed_actions`/
-    `:targeted_by_actions` are `Action` reads, gated by rule 8.
-  - line 657, `Games.get_player!(ctx.bob.id, load: [:targeted_by_actions])`
-    (same test) — same fix, same reasons.
-  - line 660, `Games.get_phase!(ctx.phase.id, load: :actions).actions` (same
+    needs `authorize?: false` (rule 1).
+  - **"actions" (987-1042):** setup (988-992) seats players via
+    `Games.add_player!` (no field-governed read off the return) and calls
+    `Games.create_phase!` (`Phase`, no policy) — no fix. Line 995,
+    `Games.create_action!(ctx.phase.id, ctx.alice.id, ctx.bob.id, :vote)`
+    ("records who did what to whom in a phase") — needs `authorize?: false`
+    (rule 7; this describe block tests `Action`'s own CRUD/relationships,
+    not rule 7's impersonation check, so `authorize?: false` is the right
+    fix here, the same choice as the "day vote resolution" block above,
+    not the real-actor choice `action_test.exs` makes). Line 1000,
+    `Games.update_action!` — no fix (rule 9, stays open). Line 1003,
+    `Games.get_player!(ctx.alice.id, load: [:performed_actions,
+    :targeted_by_actions])` — needs `authorize?: false` for the `Player`
+    read (rule 4) *and* because the loaded relationships are `Action` reads
+    (rule 8). Line 1008, `Games.get_player!(ctx.bob.id, load:
+    [:targeted_by_actions])` (same test) — same fix, same reasons. Line
+    1011, `Games.get_phase!(ctx.phase.id, load: :actions).actions` (same
     test) — `Phase` itself carries no policy, but the loaded `:actions`
-    relationship is an `Action` read gated by rule 8; needs
-    `authorize?: false`.
-  - line 664, `Games.create_action!(ctx.phase.id, ctx.alice.id, ctx.bob.id,
-    :vote)` ("allows one action per actor, phase and type") — needs
-    `authorize?: false` (rule 7).
-  - line 666-667, `Games.create_action(ctx.phase.id, ctx.alice.id,
-    ctx.alice.id, :vote)` (same test, expects the duplicate-identity error
-    qss.4 now reports as `field: :phase_id`) — needs `authorize?: false`
-    (rule 7): without it this is forbidden before the identity check ever
-    runs, changing the expected error from `Ash.Error.Invalid{errors:
-    [%{field: :phase_id}]}` to a policy-forbidden one.
-  - line 672-673, `Games.create_action!(ctx.phase.id, ctx.alice.id,
-    ctx.bob.id, :protect)` (same test, after qss.4's
-    `Games.update_player!(ctx.alice, %{role: :bodyguard})` at line 670,
-    which needs no fix — its return is discarded) — needs
-    `authorize?: false` (rule 7).
-  - line 677, `Games.create_action!(day2.id, ctx.alice.id, ctx.bob.id,
-    :vote)` (same test) — needs `authorize?: false` (rule 7).
-  - line 682, `Games.create_action(ctx.phase.id, ctx.alice.id, ctx.bob.id,
-    :dance)` ("rejects unknown types") — needs `authorize?: false` (rule 7),
-    for the same reason as line 666-667: otherwise forbidden pre-empts the
-    `:type` validation the test expects.
-  - line 686, `Games.create_action!(ctx.phase.id, ctx.alice.id, ctx.bob.id,
-    :vote)` ("are deleted along with their phase") — needs
-    `authorize?: false` (rule 7).
-  - line 689, `Games.get_action(action.id)` (same test) — **no change**: the
-    action is genuinely gone (its phase was destroyed), and a
-    genuinely-absent row and a policy-filtered-to-empty one raise the same
-    error shape.
+    relationship is an `Action` read; needs `authorize?: false`. Line 1015,
+    `Games.create_action!(...)` ("allows one action per actor, phase and
+    type") — needs `authorize?: false` (rule 7). Lines 1017-1018,
+    `Games.create_action(ctx.phase.id, ctx.alice.id, ctx.alice.id, :vote)`
+    (same test, expects the duplicate-identity error at `field:
+    :phase_id`) — needs `authorize?: false` (rule 7): without it this is
+    forbidden before the identity check runs, changing the expected error
+    class. Line 1021, `Games.update_player!(ctx.alice, %{role:
+    :bodyguard})` (same test, return discarded) — no fix. Line 1024,
+    `Games.create_action!(...)` (same test) — needs `authorize?: false`
+    (rule 7). Line 1028, `Games.create_action!(day2.id, ...)` (same test)
+    — needs `authorize?: false` (rule 7). Lines 1032-1033,
+    `Games.create_action(ctx.phase.id, ctx.alice.id, ctx.bob.id, :dance)`
+    ("rejects unknown types") — needs `authorize?: false` (rule 7), for the
+    same reason as 1017-1018. Line 1037, `Games.create_action!(...)` ("are
+    deleted along with their phase") — needs `authorize?: false` (rule 7).
+    Line 1040, `Games.get_action(action.id)` (same test) — no change, the
+    action is genuinely gone (its phase was destroyed).
   - Nothing else in this file changes: every `create_game`/`update_game`/
-    `destroy_game`/`end_day`/`end_night`/`create_phase`/`update_phase`/
-    `remove_player!`/`update_action!`/the rest of `join_game`/`join_game!`'s
-    own describe block call stays as-is (rules 2/6/9) — none of them read a
-    field rule 5 governs off their own result, or create an `Action` as
-    someone else. The "phase transitions" describe block's `start_game!`
-    calls already pass `actor: owner` from qss.3 — this bead's `:start`
-    policy checks the identical condition, so an already-fixed call needs no
-    further change.
-- `test/werewolf_ash/games/action/changes/apply_kill_test.exs` — new since
-  the previous revision (qss.4); not previously audited
-  (`grep -n "Games\." test/werewolf_ash/games/action/changes/apply_kill_test.exs`):
-  - lines 38, 54 and 66, `Games.get_player!(target.id).alive` (three tests
+    `destroy_game` call, and the top-of-file `update_settings!/2` private
+    helper (10-13, already `actor: %{id: game.owner_id}`, unaffected by
+    rule 3b) stay as-is.
+- `test/werewolf_ash/games/action/changes/apply_kill_test.exs` (69 lines,
+  unchanged in shape since the previous revision — re-grepped fresh against
+  `e6e6158`, same result:
+  `grep -n "Games\." test/werewolf_ash/games/action/changes/apply_kill_test.exs`
+  → 38, 49, 54, 66):
+  - Lines 38, 54 and 66, `Games.get_player!(target.id).alive` (three tests
     under `describe "change/3"`) — need `authorize?: false` (rule 4; `.alive`
     carries no field policy, so rule 5 does not additionally apply here).
-  - line 49, `Games.create_action!(day.id, bodyguard.id, target.id,
+  - Line 49, `Games.create_action!(day.id, bodyguard.id, target.id,
     :protect)` — needs `authorize?: false` (rule 7).
   - Line 21's `stage/3` helper calls `ApplyKill.change/3` directly with
     `context: %{}`, then invokes the returned `after_action` hook itself —
@@ -998,23 +1552,29 @@ implemented (qss.5, unmerged as of this revision; see rule 8's own entry).
     reasons at once, since it stops this read from depending on `opts` (and
     therefore on the actor) at all — no separate fix or test change is
     needed here beyond the four calls already listed above.
-  - The other four new qss.4 test files under `test/werewolf_ash/games/action/`
-    (`actor_alive_test.exs`, `type_requires_phase_and_role_test.exs`,
-    `shoot_requires_pending_hunter_test.exs`,
-    `changes/record_investigation_result_test.exs`) need **no change**:
-    checked by grep for any `Games.` call
-    (`grep -n "Games\." test/werewolf_ash/games/action/validations/*.exs test/werewolf_ash/games/action/changes/record_investigation_result_test.exs`)
-    — the only hits are `Games.update_player!(actor_or_hunter, %{alive:
-    false})` calls whose return is discarded, and none of them create or
-    read an `Action` through the domain interface (they call the validation/
-    change modules directly on bare changesets/structs, the same pattern as
-    `AuthorMayPost`'s own tests).
+- **Seven `Action`-validation test files need no change**, checked fresh
+  against `e6e6158` — four from qss.4 (`actor_alive_test.exs`,
+  `type_requires_phase_and_role_test.exs`,
+  `shoot_requires_pending_hunter_test.exs`,
+  `changes/record_investigation_result_test.exs`) and three new ones from
+  qss.18 (`actor_and_target_in_game_test.exs`, `no_consecutive_protect_test.exs`,
+  `target_alive_test.exs`)
+  (`grep -n "Games\." test/werewolf_ash/games/action/validations/*.exs test/werewolf_ash/games/action/changes/record_investigation_result_test.exs`
+  → only `Games.update_player!(actor_or_hunter, %{alive: false})`-shaped
+  calls in `actor_alive_test.exs`, `shoot_requires_pending_hunter_test.exs`
+  and `target_alive_test.exs`, every one a discarded-return setup call, no
+  fix needed (rule 6); `actor_and_target_in_game_test.exs`,
+  `no_consecutive_protect_test.exs`, `type_requires_phase_and_role_test.exs`
+  and `record_investigation_result_test.exs` have no `Games.` calls at all)
+  — none of these seven creates or reads an `Action` through the domain
+  interface; they call the validation/change modules directly on bare
+  changesets/structs, the same pattern as `AuthorMayPost`'s own tests.
 
 **No forced consequence found in `Player.Validations.UserHasName`.** This is
-qss.4/27w.9's new `Player`-seating validation (`lib/werewolf_ash/games/player/validations/user_has_name.ex`),
+qss.4/27w.9's `Player`-seating validation (`lib/werewolf_ash/games/player/validations/user_has_name.ex`),
 the same shape of risk as `CheckWin`'s and `deal_roles.ex`'s reads (an
-actor-less lookup of a resource this bead adds a policy to) — checked per
-this round's request. It already reads with `Ash.get(User, user_id,
+actor-less lookup of a resource this bead adds a policy to) — re-checked
+against `e6e6158`. It already reads with `Ash.get(User, user_id,
 authorize?: false)` (line 28), and its own moduledoc says why: "The user is
 looked up without authorization: this is a game rule, not an access check...
 the same convention `Message.Validations.AuthorMayPost` uses." No production
@@ -1023,307 +1583,325 @@ already pass regardless of this bead: `user_has_name_test.exs` calls
 `UserHasName.validate/3` directly on a manually-built changeset (never
 through an authorized action, so `User`'s new policies never run), and
 `games_test.exs`'s "refuses to seat a nameless user"/"seats a named user"
-tests (lines 482-497, 521-538, listed above) call `Player`'s `:create`/`:join`
-with no actor and pass regardless, since `UserHasName`'s own `Ash.get/3`
-already bypasses authorization.
+tests (568-576, 578-583 in the "players" block; 639-648, 650-656 in the
+"join_game" block) call `Player`'s `:create`/`:join` with no actor, and
+`UserHasName` never causes them to fail, since its own `Ash.get/3` already
+bypasses authorization. The two "join_game" tests still depend on rule 4's
+`ResolveGameByJoinCode` fix, and lines 575 and 647 need `authorize?: false`
+so their `== []` assertions are not vacuous (see the "players" and
+"join_game" entries above).
 
-**`test/werewolf_ash/games/action_test.exs` — missing from every previous
-revision of this spec.** 356 lines, all new with qss.4, exercising
-`create_action`/`create_kill_action` end to end through the domain interface
-with no actor anywhere
-(`grep -n "Games\." test/werewolf_ash/games/action_test.exs` — full output
-below, 76 hits):
+**`test/werewolf_ash/games/action_test.exs` — re-audited in full against
+`e6e6158`; grown from 356 to 485 lines since the previous revision (qss.18
+added new tests inline, qss.20 tightened two assertions), so every line
+number below has moved and every new call site needs its own
+classification**
+(`grep -n "Games\." test/werewolf_ash/games/action_test.exs` — 106 hits;
+`grep -n "actor:" test/werewolf_ash/games/action_test.exs` → line 22 only,
+confirming every `create_action`/`create_kill_action` call in the file
+still has zero actor, same as the previous revision found):
 
-```
-22:    game = Games.start_game!(game, %{now: @start}, actor: owner)
-25:      Games.list_players!(query: [filter: [game_id: game.id]])
-32:    Games.get_game!(game.id, load: :current_phase).current_phase
-50:      action = Games.create_action!(day.id, p.villager.id, p.werewolf.id, :vote)
-53:      assert Games.get_action!(action.id).id == action.id
-55:      assert Games.list_actions!(query: [filter: [phase_id: day.id]])
-63:      game = Games.end_day!(game, %{now: @dusk})
-66:      action = Games.create_action!(night.id, p.seer.id, p.werewolf.id, :investigate)
-74:      action = Games.create_action!(day.id, p.bodyguard.id, p.villager.id, :protect)
-80:      Games.update_player!(p.hunter, %{alive: false})
-84:      action = Games.create_action!(day.id, p.hunter.id, p.villager.id, :shoot)
-94:      night_game = Games.end_day!(game, %{now: @dusk})
-97:      Games.update_player!(p.villager, %{alive: false})
-98:      Games.update_player!(p.seer, %{alive: false})
-99:      Games.update_player!(p.bodyguard, %{alive: false})
-102:               Games.create_action(day.id, p.villager.id, p.werewolf.id, :vote)
-105:               Games.create_action(night.id, p.seer.id, p.werewolf.id, :investigate)
-108:               Games.create_action(day.id, p.bodyguard.id, p.villager.id, :protect)
-110:      assert Games.list_actions!(query: [filter: [phase_id: day.id]]) == []
-111:      assert Games.list_actions!(query: [filter: [phase_id: night.id]]) == []
-115:      game = Games.end_day!(game, %{now: @dusk})
-119:               Games.create_action(night.id, p.villager.id, p.werewolf.id, :vote)
-121:      assert Games.list_actions!(query: [filter: [phase_id: night.id]]) == []
-129:      night = current_phase(Games.end_day!(game, %{now: @dusk}))
-132:               Games.create_action(day.id, p.seer.id, p.werewolf.id, :investigate)
-135:               Games.create_action(night.id, p.villager.id, p.werewolf.id, :investigate)
-143:      night = current_phase(Games.end_day!(game, %{now: @dusk}))
-146:               Games.create_action(night.id, p.bodyguard.id, p.villager.id, :protect)
-149:               Games.create_action(day.id, p.villager.id, p.werewolf.id, :protect)
-156:               Games.create_action(day.id, p.bodyguard.id, p.bodyguard.id, :protect)
-164:               Games.create_action(day.id, p.villager.id, p.werewolf.id, :shoot)
-172:      first = Games.create_action!(day.id, p.villager.id, p.werewolf.id, :vote)
-175:               Games.create_action(day.id, p.villager.id, p.bodyguard.id, :vote)
-177:      unchanged = Games.get_action!(first.id)
-185:      Games.create_action!(day.id, p.villager.id, p.werewolf.id, :vote)
-188:               Games.create_action!(day.id, p.bodyguard.id, p.villager.id, :protect)
-190:      game = Games.end_day!(game, %{now: @dusk})
-191:      game = Games.end_night!(game, %{now: @dawn})
-194:      assert %{type: :vote} = Games.create_action!(day2.id, p.villager.id, p.werewolf.id, :vote)
-201:               Games.create_action(day.id, p.werewolf.id, p.villager.id, :kill)
-209:      game = Games.end_day!(game, %{now: @dusk})
-215:      action = Games.create_kill_action!(night.id, p.werewolf.id, p.villager.id)
-219:      assert Games.get_player!(p.villager.id).alive == false
-228:               Games.create_kill_action(night.id, p.villager.id, p.bodyguard.id)
-231:               Games.create_kill_action(day.id, p.werewolf.id, p.villager.id)
-233:      Games.update_player!(p.werewolf, %{alive: false})
-236:               Games.create_kill_action(night.id, p.werewolf.id, p.villager.id)
-238:      assert Games.list_actions!(query: [filter: [phase_id: night.id]]) == []
-246:      Games.create_action!(day.id, p.bodyguard.id, p.villager.id, :protect)
-248:      action = Games.create_kill_action!(night.id, p.werewolf.id, p.villager.id)
-251:      assert Games.get_player!(p.villager.id).alive == true
-259:      first = Games.create_kill_action!(night.id, p.werewolf.id, p.villager.id)
-263:               Games.create_kill_action(night.id, other_wolf.id, p.bodyguard.id)
-266:               Games.create_kill_action(night.id, p.werewolf.id, p.bodyguard.id)
-268:      assert Games.get_action!(first.id).id == first.id
-269:      assert Games.get_player!(p.villager.id).alive == false
-270:      assert Games.get_player!(p.bodyguard.id).alive == true
-278:      Games.create_kill_action!(night.id, p.werewolf.id, p.villager.id)
-297:      Games.create_action!(day.id, p.bodyguard.id, p.villager.id, :protect)
-298:      Games.create_action!(day.id, p.villager.id, p.werewolf.id, :vote)
-300:      game = Games.end_day!(game, %{now: @dusk})
-304:               Games.create_action(night.id, p.villager.id, p.werewolf.id, :vote)
-307:      kill = Games.create_kill_action!(night.id, p.werewolf.id, target.id)
-310:      assert Games.get_player!(target.id).alive == false
-312:      seer_action = Games.create_action!(night.id, p.seer.id, p.werewolf.id, :investigate)
-316:               Games.create_kill_action(night.id, p.villager.id, p.bodyguard.id)
-319:               Games.create_kill_action(night.id, p.werewolf.id, p.bodyguard.id)
-321:      assert Games.get_player!(target.id).alive == false
-323:      assert Games.list_actions!(query: [filter: [phase_id: night.id, type: :kill]])
-331:      Games.create_action!(day.id, p.bodyguard.id, p.villager.id, :protect)
-333:      game = Games.end_day!(game, %{now: @dusk})
-336:      kill = Games.create_kill_action!(night.id, p.werewolf.id, p.villager.id)
-339:      assert Games.get_player!(p.villager.id).alive == true
-345:      Games.update_player!(p.hunter, %{alive: false})
-349:      shot = Games.create_action!(day.id, p.hunter.id, p.villager.id, :shoot)
-353:               Games.create_action(day.id, p.villager.id, p.werewolf.id, :shoot)
-```
+Four groups, same shape as before, updated line numbers, plus qss.18's new
+call sites folded into groups 2 and 3:
 
-Three groups need a fix, one needs none:
+1. **No fix**: `end_day!`/`end_night!` (65, 96, 119, 159, 160, 171, 185,
+   199, 250, 251, 269, 400, 401, 410, 411, 429, 462) — `Game`'s
+   `:end_day`/`:end_night` stay open (rule 2). `update_player!` (82, 99,
+   100, 101, 122, 293, 315, 342, 474) — `Player`'s `:update` stays open
+   (rule 6) and none of these nine read `.role`/any field-policy-governed
+   value off the return. Line 22's `start_game!` already carries
+   `actor: owner`.
 
-1. **No fix**: `end_day!`/`end_night!` (63, 94, 115, 129, 143, 190, 191, 209,
-   300, 333) — `Game`'s `:end_day`/`:end_night` stay open (rule 2).
-   `update_player!` (80, 97, 98, 99, 233, 345) — `Player`'s `:update` stays
-   open (rule 6) and none of these six read `.role`/any field-policy-governed
-   value off the return, so rule 5 does not reach them either. Line 22's
-   `start_game!` already carries `actor: owner`.
-
-2. **`started_game/0` and `current_phase/1`, the file's two setup helpers —
-   `authorize?: false`, not a real actor.** Neither represents a player
-   acting; both are bookkeeping reads verifying/fetching state, the same
-   role `deal_roles.ex`'s and `minimum_players.ex`'s internal reads play (and
-   the same reasoning: they must find the real roster/phase regardless of
-   who, if anyone, is asking).
-   - line 25, `started_game/0`'s `Games.list_players!(...)` — needs
+2. **`started_game/0` and `current_phase/1`, the file's two setup helpers
+   — `authorize?: false`, not a real actor** (unchanged reasoning from the
+   previous revision):
+   - Line 25, `started_game/0`'s `Games.list_players!(...)` — needs
      `authorize?: false` (rules 4 *and* 5: line 26's `Map.new(&{&1.role,
-     &1})`, not shown in the grep above, reads `.role` off this same
-     result). This is the single most consequential fix in this file: left
-     unfixed, `p` is `%{}` and every test in the file that destructures
-     `p.villager`/`p.werewolf`/etc. raises `KeyError`.
-   - line 32, `current_phase/1`'s `Games.get_game!(game.id, load:
-     :current_phase).current_phase` — needs `authorize?: false` (rule 1);
-     one fix here covers every call site that goes through this helper
-     (including the two at 129 and 143 that wrap it around `end_day!`'s
-     result inline).
+     &1})` reads `.role` off this same result, and line 28's
+     `assert map_size(players) == 5` — qss.20's own tightened assertion —
+     fails immediately if left unfixed, since `players` would be `%{}`).
+   - Line 34, `current_phase/1`'s `Games.get_game!(game.id, load:
+     :current_phase).current_phase` — needs `authorize?: false` (rule 1).
 
 3. **Every `create_action`/`create_kill_action` call — `actor:`, the
-   submitting player's own `User`, not `authorize?: false`.** This is the
-   opposite choice from group 2, deliberately: these calls *are* the game
-   actions this bead's rule 7 governs, and every single one in this file
-   already submits as the correct player for what it is testing — none of
-   qss.4's own role/phase/aliveness/uniqueness tests are testing
-   impersonation, so the player named as the second positional argument
-   (`p.villager.id`, `p.seer.id`, `p.werewolf.id`, ..., or `other_wolf.id`
-   at line 263) is always the one whose `User` `actor:` must carry. Using
-   `authorize?: false` here instead would make every one of these tests
-   pass regardless of rule 7, which is not what a "policy tests as
-   different actors" bead should ship. This needs a data-shape addition to
-   the file's fixtures — `started_game/0` (and the inline
-   `generate(player(game_id: game.id, role: :werewolf))` calls making
-   `other_wolf` at lines 260/279) must expose each player's own `User`
-   alongside the `Player` it already tracks, e.g. by resolving
+   submitting player's own `User`, not `authorize?: false`** (unchanged
+   reasoning: this file is qss.4/qss.18's own action-creation rules test,
+   so masking rule 7 with `authorize?: false` would make every test here
+   pass regardless of it). `started_game/0` must expose each player's own
+   `User` alongside the `Player` it already tracks (e.g. resolving
    `player.user_id` via `Ash.get!(WerewolfAsh.Accounts.User, player.user_id,
-   authorize?: false)` per player and passing that as `actor:`. Every line:
-   50, 66, 74, 84, 102, 105, 108, 119, 132, 135, 146, 149, 156, 164, 172,
-   175, 185, 188, 194, 201, 215, 228, 231, 236, 246, 248, 259, 263, 266,
-   278, 297, 298, 304, 307, 312, 316, 319, 331, 336, 349, 353.
+   authorize?: false)` per player); the same exposure is needed for the
+   ad-hoc `other_wolf`/`outsider_wolf`/`outsider` players generated inline
+   at lines 143, 328-329 and 359 (an `outsider`'s own `User` — not any
+   player from `started_game`'s roster — is the correct actor for a
+   cross-game call naming that outsider as the acting player; the
+   *target*-side outsider calls, e.g. line 146, still act as `p.villager`).
+   Every line needing this fix: 52, 68, 76, 86, 104, 107, 110, 125, 128,
+   131, 146, 149, 157, 164, 167, 175, 188, 191, 202, 205, 212, 220, 228,
+   231, 241, 245, 248, 254, 261, 275, 288, 291, 296, 306, 308, 318, 332,
+   335, 345, 347, 358, 362, 365, 379, 398, 405, 408, 415, 422, 423, 427,
+   433, 436, 441, 445, 448, 460, 465, 478, 482 — 60 call sites total,
+   including qss.18's new tests ("rejects a cross-game actor or target,"
+   "rejects consecutive-day protection...," "rejects a dead target,"
+   "rejects a dead-target kill...," each of which is new since the
+   previous revision but follows the identical shape).
 
 4. **Every remaining read verifying state after the fact —
-   `authorize?: false`, same reasoning as group 2.** These don't represent
-   anyone "checking" in the game's own terms; they're the test confirming
-   what got written. `get_action!` (53, 177, 268), `list_actions!` (55, 110,
-   111, 121, 238, 323), `get_player!` (219, 251, 269, 270, 310, 321, 339) —
-   all need `authorize?: false`.
+   `authorize?: false`, same reasoning as group 2.** `get_action!` (55,
+   233, 367), `list_actions!` (57, 112, 113, 133, 134, 151, 177, 298, 320,
+   337, 452), `get_player!` (279, 311, 350, 370, 371, 439, 450, 468) — all
+   need `authorize?: false`. (151, 320, 337 and the "rejects a dead
+   target"/"rejects a cross-game actor and target" tests these belong to
+   are new since the previous revision; the fix is the same as every other
+   entry in this group.)
 
-`Ash.Seed.seed!` (lines 282-288, "the database refuses a second kill row
+`Ash.Seed.seed!` (lines 383-389, "the database refuses a second kill row
 even bypassing the application") needs no change: seeding writes straight to
 the data layer, bypassing Ash actions and policies entirely, which is the
 point of that test.
 
-Correction to the previous revision: the claim that `git diff e3de03d..034a775
---stat` showed only three test files changed was false — that command was
-run scoped to an explicit list of paths (the files already in this section),
-so it could only ever confirm or deny changes to *those* files; it could not
-and did not show whether other files existed. Run unscoped, over all of
-`test/`, it lists 11 files:
+**Provenance for this revision:** `git diff --stat 034a775..e6e6158 --
+test/` (034a775 is the commit the previous revision was written against)
+lists 16 files, 1440 insertions:
 
 ```
-$ git diff --stat e3de03d..034a775 -- test/
- test/support/generators.ex                         |  22 +-
- test/werewolf_ash/accounts/user_test.exs           |  67 ++++
- .../games/action/changes/apply_kill_test.exs       |  69 ++++
- .../changes/record_investigation_result_test.exs   |  54 ++++
- .../games/action/validations/actor_alive_test.exs  |  38 +++
- .../shoot_requires_pending_hunter_test.exs         |  61 ++++
- .../type_requires_phase_and_role_test.exs          |  90 ++++++
- test/werewolf_ash/games/action_test.exs            | 356 +++++++++++++++++++++
- .../player/validations/user_has_name_test.exs      |  37 +++
- test/werewolf_ash/games_test.exs                   | 102 +++++-
- test/werewolf_ash_web/graphql/auth_test.exs        | 160 +++++++++
- 11 files changed, 1052 insertions(+), 4 deletions(-)
+$ git diff --stat 034a775..e6e6158 -- test/
+ .../validations/actor_and_target_in_game_test.exs  |  67 ++++
+ .../validations/no_consecutive_protect_test.exs    | 106 +++++++
+ .../games/action/validations/target_alive_test.exs |  44 +++
+ test/werewolf_ash/games/action_test.exs            | 133 +++++++-
+ .../games/game/changes/resolve_day_vote_test.exs   |  89 ++++++
+ .../games/game/role_assignment_test.exs            |  68 +++-
+ .../validations/composition_fits_at_cap_test.exs   |  56 ++++
+ .../manual_werewolf_count_valid_test.exs           |  32 ++
+ .../max_players_not_below_seated_test.exs          |  51 +++
+ .../game/validations/min_not_above_max_test.exs    |  27 ++
+ .../game/validations/minimum_players_test.exs      |  20 ++
+ .../validations/positive_player_bounds_test.exs    |  31 ++
+ .../validations/role_composition_fits_test.exs     |  75 +++++
+ .../player/validations/game_not_full_test.exs      |  85 +++++
+ .../games/reactors/resolve_lynch_test.exs          | 211 ++++++++++++
+ test/werewolf_ash/games_test.exs                   | 353 ++++++++++++++++++-
+ 16 files changed, 1440 insertions(+), 8 deletions(-)
 ```
 
-`test/werewolf_ash/games/action_test.exs` (356 lines, all-new, qss.4) was
-missing from every previous revision of this spec — see its own entry below.
-The other 9 files in this list (`generators.ex`, `user_test.exs`,
-`apply_kill_test.exs`, `record_investigation_result_test.exs`,
-`actor_alive_test.exs`, `shoot_requires_pending_hunter_test.exs`,
-`type_requires_phase_and_role_test.exs`, `user_has_name_test.exs`,
-`games_test.exs`, `auth_test.exs`) are already accounted for above. Every
-file *not* in this list — `deal_roles_test.exs`, `check_win_test.exs`,
+`action_test.exs` and `games_test.exs` are covered above in full. The
+remaining 14 are handled below; ten of them (`role_assignment_test.exs`,
+`composition_fits_at_cap_test.exs`, `manual_werewolf_count_valid_test.exs`,
+`max_players_not_below_seated_test.exs`, `min_not_above_max_test.exs`,
+`positive_player_bounds_test.exs`, `actor_and_target_in_game_test.exs`,
+`no_consecutive_protect_test.exs`, `target_alive_test.exs` and — already
+covered above — the other four qss.18/qss.4 validation test files) call
+their validation/pure-function module directly and need no change; that is
+confirmed by grep, not assumed, for every one of them below. Every file
+*not* in this diff — `deal_roles_test.exs`, `check_win_test.exs`,
 `resolve_win_test.exs`, `message_test.exs`, `visibility_test.exs`,
-`preparations/visible_to_test.exs`, `author_may_post_test.exs` — is
-confirmed unchanged since the previous revision by the same diff, and by
-re-running each file's own grep below against `034a775`; every line number
-in that cluster is unchanged.
+`preparations/visible_to_test.exs`, `author_may_post_test.exs`,
+`auth_test.exs`, `actor_is_owner_test.exs`, `game_in_lobby_test.exs`,
+`user_has_name_test.exs` — is confirmed unchanged since the previous
+revision by the same diff, and by re-running each file's own grep fresh
+against `e6e6158`: every line number in that cluster is unchanged from the
+previous revision.
 
 - `test/werewolf_ash/games/game/changes/deal_roles_test.exs`
   (`grep -n "Games\.\(list_players\|get_player\)" test/werewolf_ash/games/game/changes/deal_roles_test.exs`
-  → 23, 35, 43; both tests):
-  - line 23, `Games.list_players!(query: [filter: [game_id: game.id]])`
-    (feeding line 27's `.role` frequencies) — needs `authorize?: false`
-    (rules 4 and 5). This is the other existing pin for `deal_roles.ex:27`'s
-    own forced-consequence fix (see the games_test.exs note above): fix
-    this line alone and the test calls `DealRoles.change/3`'s `after_action`
-    hook directly, so it fails the same way if `deal_roles.ex:27` isn't also
-    fixed — a `FunctionClauseError` from `composition(0)`, per the
-    games_test.exs note above. The guard is not the bug; the empty roster is.
-  - line 35, `Games.list_players!(query: [filter: [game_id: other_game.id]])`
+  → 23, 35, 43; unchanged line numbers, both tests):
+  - Line 23, `Games.list_players!(query: [filter: [game_id: game.id]])`
+    (feeding line 24's `.role` frequencies) — needs `authorize?: false`
+    (rules 4 and 5). This is the other existing pin for `deal_roles.ex:28`'s
+    own forced-consequence fix (see rule 4's rewritten paragraph and the
+    games_test.exs entry above): fix this line alone and the test calls
+    `DealRoles.change/3`'s `after_action` hook directly at line 20, so it
+    still fails if `deal_roles.ex:28` isn't also fixed — `FunctionClauseError`
+    from `List.duplicate/2` inside `composition/2`, not from `composition/1`'s
+    former `>= 5` guard (that guard no longer exists; see rule 4). The
+    empty roster is still the bug, not the guard's absence.
+  - Line 35, `Games.list_players!(query: [filter: [game_id: other_game.id]])`
     — needs `authorize?: false` (rule 4).
-  - line 43, `Games.get_player!(other_player.id).role` — needs
+  - Line 43, `Games.get_player!(other_player.id).role` — needs
     `authorize?: false` (rules 4 and 5).
 - `test/werewolf_ash/games/reactors/check_win_test.exs`
   (`grep -n "Games\.get_game!" test/werewolf_ash/games/reactors/check_win_test.exs`
-  → line 106 only): "never touches the game"'s `Games.get_game!(game.id)`
-  needs `authorize?: false` (rule 1). `check_win.ex`'s own
-  `read :living_players` step fix is rule 4's forced consequence, not a
-  separate item — see rule 4.
+  → line 106 only, unchanged): "never touches the game"'s
+  `Games.get_game!(game.id)` needs `authorize?: false` (rule 1).
+  `check_win.ex`'s own `read :living_players` step fix is rule 4's forced
+  consequence, not a separate item — see rule 4.
 - `test/werewolf_ash/games/reactors/resolve_win_test.exs`
   (`grep -n "Games\.\(get_game\|list_players\|start_game\)" test/werewolf_ash/games/reactors/resolve_win_test.exs`
-  → 18, 20, 33, 44, 53, 62, 73):
-  - line 33, `Games.get_game!(game.id)` ("leaves a game alone...") — needs
+  → 18, 20, 33, 44, 53, 62, 73; unchanged line numbers):
+  - Line 33, `Games.get_game!(game.id)` ("leaves a game alone...") — needs
     `authorize?: false` (rule 1).
-  - line 44, `Games.list_players!(...) |> Enum.find(&(&1.role ==
+  - Line 44, `Games.list_players!(...) |> Enum.find(&(&1.role ==
     :werewolf))` ("finishes the game for the village") — needs
     `authorize?: false` (rules 4 and 5).
-  - line 53, `Games.get_game!(game.id).winner` (same test) — needs
+  - Line 53, `Games.get_game!(game.id).winner` (same test) — needs
     `authorize?: false` (rule 1).
-  - line 62, `Games.list_players!(...) |> Enum.split_with(&(&1.role ==
+  - Line 62, `Games.list_players!(...) |> Enum.split_with(&(&1.role ==
     :werewolf))` ("finishes the game for the wolves") — needs
     `authorize?: false` (rules 4 and 5).
-  - line 73, `Games.get_game!(game.id).state` (same test) — needs
+  - Line 73, `Games.get_game!(game.id).state` (same test) — needs
     `authorize?: false` (rule 1).
-  - line 18 (`load: :owner, authorize?: false`) and the `start/1` helper's
+  - Line 18 (`load: :owner, authorize?: false`) and the `start/1` helper's
     `Games.start_game!(game, actor: owner)` are already correct; no change.
+- **`test/werewolf_ash/games/reactors/resolve_lynch_test.exs` (211 lines,
+  entirely new since the previous revision, qss.5) — not previously
+  audited**
+  (`grep -n "Games\." test/werewolf_ash/games/reactors/resolve_lynch_test.exs`
+  — 18 hits: the `vote!/3` helper's own definition at line 21 (containing
+  the literal `Games.create_action!` the grep matches — the helper's own
+  16 *call sites* elsewhere in the file do not match this grep at all,
+  since they call the local `vote!(...)` function, not anything prefixed
+  `Games.`), one more direct `Games.create_action!` (line 141), two
+  `Games.update_player!` calls (182, 204), and 14 `Games.get_player!(...).alive`
+  calls):
+  - Line 21, `defp vote!(day, actor, target), do: Games.create_action!(day.id,
+    actor.id, target.id, :vote)` — needs `authorize?: false` (rule 7). This
+    file tests lynch resolution, not rule 7's impersonation check (that is
+    `action_test.exs`'s job), so `authorize?: false` is the right fix here,
+    the same choice this spec already makes for `message_test.exs`'s
+    `post!`/`post` helpers under rule 11. Fixing this one line covers every
+    one of `vote!/3`'s 16 call sites (lines 90, 91, 107, 108, 122, 123, 142,
+    143, 161, 162, 178, 179, 180, 200, 201, 202) without touching them
+    individually — none of those 16 lines themselves need editing, and
+    none of them appears in the grep count above.
+  - Line 141, `Games.create_action!(day.id, bodyguard.id, target.id,
+    :protect)` ("an existing :protect action for the lynched player does
+    not save them") — needs `authorize?: false` (rule 7), same reasoning.
+  - Lines 182 and 204, `Games.update_player!(voter_a1/target_c, %{alive:
+    false})` — no fix (rule 6, `Player`'s `:update` stays open; neither
+    reads `.role` off the return).
+  - Every `Games.get_player!(...).alive` call (14 total: 94, 95, 96, 113,
+    126, 127, 128, 146, 165, 166, 185, 186, 207, 208) — needs
+    `authorize?: false` (rule 4; `.alive` carries no field policy).
+- **`test/werewolf_ash/games/game/changes/resolve_day_vote_test.exs` (89
+  lines, entirely new since the previous revision, qss.5) — not previously
+  audited**
+  (`grep -n "Games\." test/werewolf_ash/games/game/changes/resolve_day_vote_test.exs`
+  — 12 hits, 8 of them `get_*`/`list_*`):
+  - Lines 44, 45, 70, 71, `Games.create_action!(day.id, ..., :vote)` (two
+    votes per test, staged before `stage_hooks/2` builds the `:end_day`
+    changeset) — need `authorize?: false` (rule 7), same reasoning as
+    `resolve_lynch_test.exs`'s `vote!` helper above: this file tests
+    `ResolveDayVote`'s change, not rule 7.
+  - Lines 51, 59, 78 — `Games.list_phases!(...)` — `Phase` carries no
+    policy, no fix.
+  - Lines 60, 82 — `Games.get_phase!(...)` — `Phase`, no fix.
+  - Lines 57, 85, 86 — `Games.get_player!(wolf/villager1.id).alive` — need
+    `authorize?: false` (rule 4).
+  - `stage_hooks/2`'s own `Changeset.for_update(game, :end_day, %{now: now},
+    authorize?: false)` (line 30) is already correct; no change.
 - `test/werewolf_ash/games/message_test.exs`
   (`grep -n "Games\.\(send_message\|list_messages_visible_to\)" test/werewolf_ash/games/message_test.exs`
-  → 34, 38, 43, 88, 91, 149, 150, 154, 162):
-  - `post!/1,3` and `post/1,3` (lines 33-38) — add `authorize?: false`
+  → 34, 38, 43, 88, 91, 149, 150, 154, 162; unchanged since the previous
+  revision):
+  - `post!/1,3` (line 33-35) and `post/1,3` (37-39) — add `authorize?: false`
     (rule 11).
-  - `visible_ids/1,2` (lines 41-45) — add `authorize?: false` (rule 10).
-  - line 88 and line 91, the two direct `Games.send_message(...)` calls in
+  - `visible_ids/1,2` (41-45) — add `authorize?: false` (rule 10).
+  - Line 88 and line 91, the two direct `Games.send_message(...)` calls in
     "the author must be a player of the game" (outside the `post`/`post!`
     helpers) — need `authorize?: false` (rule 11), or every actor-less call
     is forbidden before `AuthorMayPost` ever runs, regardless of which
     `author_id` was passed.
-  - line 149 and line 150, the two direct `Games.list_messages_visible_to!`
+  - Line 149 and line 150, the two direct `Games.list_messages_visible_to!`
     calls in "messages never cross games..." — need `authorize?: false`
     (rule 10).
-  - line 154, `Games.list_messages_visible_to!(ctx.dead_wolf.id)` ("messages
+  - Line 154, `Games.list_messages_visible_to!(ctx.dead_wolf.id)` ("messages
     come back oldest first") — needs `authorize?: false` (rule 10).
-  - line 162, `Games.list_messages_visible_to!(ctx.villager.id, load:
+  - Line 162, `Games.list_messages_visible_to!(ctx.villager.id, load:
     :author)` ("the author can be loaded") — needs `authorize?: false`
     (rule 10 for the `Message` read, and rule 4 for the loaded `:author`
     `Player`).
-  - `messages_in/1`'s `Ash.read!()` (lines 185-188) — needs
-    `authorize?: false` (rule 10).
+  - `messages_in/1`'s `Ash.read!()` (line 188) — needs `authorize?: false`
+    (rule 10).
   - `test/werewolf_ash/games/message/validations/author_may_post_test.exs`:
     **no change** — it exercises `check/3`/`validate/3` on bare structs and
     a manually-built changeset, never through an authorized action.
 - `test/werewolf_ash/games/message/visibility_test.exs`
   (`grep -n "Games\.send_message\|Ash\.read!" test/werewolf_ash/games/message/visibility_test.exs`
-  → 24, 25, 39): the `setup` block's two `Games.send_message!` calls (lines
-  24-25) need `authorize?: false` (rule 11); `visible_message_ids/1`'s
+  → 24, 25, 39; unchanged): the `setup` block's two `Games.send_message!`
+  calls (24-25) need `authorize?: false` (rule 11); `visible_message_ids/1`'s
   `Ash.read!()` (line 39) needs it too (rule 10).
 - `test/werewolf_ash/games/message/preparations/visible_to_test.exs`
   (`grep -n "Games\.send_message\|Ash\.read!" test/werewolf_ash/games/message/preparations/visible_to_test.exs`
-  → 18, 31, 36): the `setup` block's `Games.send_message!` call (line 18)
-  needs `authorize?: false` (rule 11); the two `Ash.read!()` calls in the
-  test bodies (lines 31 and 36) need it too (rule 10) — `prepared_query/1`
-  only builds the query, the read happens at the call site.
-- `test/werewolf_ash_web/graphql/auth_test.exs` — grown substantially (27w.9
-  added `describe "setName / currentUser.name"`, 27w.8 added the
-  `SendMagicLinkEmail`/`magic_link_url` email-delivery tests and the
-  `FailingMailerAdapter`), re-read in full against `034a775`. Correction to
-  the previous revision's "no existing test needs a fix": that was wrong —
-  two existing tests need no *test-code* change, but only pass because rule
-  17's `:email` field policy is written correctly (see rule 17's own
-  `AshAuthenticationInteraction`/`action(:sign_in_with_magic_link)` grants);
-  written the naive way (`id == actor(:id)` alone), both break for real, not
-  hypothetically:
-  - lines 110-111, `"result" => %{"id" => id, "email" => ^email}` inside
-    "request -> sign in -> authenticated currentUser, registering a new user
-    on first use" — needs the `action(:sign_in_with_magic_link)` grant, or
-    `email` renders as forbidden/`nil` and the pattern match fails.
-  - lines 154-171, "requestMagicLink succeeds identically for an
+  → 18, 31, 36; unchanged): the `setup` block's `Games.send_message!` call
+  (line 18) needs `authorize?: false` (rule 11); the two `Ash.read!()`
+  calls in the test bodies (31 and 36) need it too (rule 10) —
+  `prepared_query/1` only builds the query, the read happens at the call
+  site.
+- `test/werewolf_ash_web/graphql/auth_test.exs` — re-read in full against
+  `e6e6158`; unchanged since the previous revision (not touched by
+  qss.18/14/5):
+  - Lines 110-111, `"result" => %{"id" => id, "email" => ^email}` inside
+    "request -> sign in -> authenticated currentUser, registering a new
+    user on first use" — needs the `action(:sign_in_with_magic_link)` grant
+    (rule 17), or `email` renders as forbidden/`nil` and the pattern match
+    fails.
+  - Lines 154-171, "requestMagicLink succeeds identically for an
     unregistered email as for a registered one" — the second
     `requestMagicLink` call at line 165 requests a link for
     `registered_email`, which by then *is* registered (signed in at line
     157), landing in `Request.run/3`'s `{:ok, user}` branch
     (`sender.send(user, ...)`); needs the `AshAuthenticationInteraction`
-    grant, or `SendMagicLinkEmail.send/3` raises trying `to_string/1` on a
-    forbidden `:email`.
-  The four `setName`/`currentUser.name` tests all sign in a real user first
-  (`sign_in/1`) and act as that same actor throughout, so `:set_name`'s and
-  `:current_user`'s own pre-existing policies (both `id == actor(:id)`,
-  unaffected by this bead) already cover them; the one anonymous case ("a
-  call with no bearer token...") already expects an `errors` entry, which it
-  gets regardless of reason (`:current_user` resolving no record for
-  `read_action`, unrelated to rule 13/17). Every other
-  `SendMagicLinkEmail`/`magic_link_url` test calls those modules' functions
-  directly on bare structs/strings, never through an authorized action. Add
-  the new token-revocation test here (rule 14).
+    grant (rule 17), or `SendMagicLinkEmail.send/3` raises trying
+    `to_string/1` on a forbidden `:email`.
+  - The four `setName`/`currentUser.name` tests all sign in a real user
+    first and act as that same actor throughout, so `:set_name`'s and
+    `:current_user`'s own pre-existing policies already cover them; the one
+    anonymous case already expects an `errors` entry regardless of reason.
+    Every other `SendMagicLinkEmail`/`magic_link_url` test calls those
+    modules' functions directly on bare structs/strings, never through an
+    authorized action. Add the new token-revocation test here (rule 14).
+- **`test/werewolf_ash/games/game/validations/minimum_players_test.exs`
+  (+20 lines since the previous revision, qss.14) — no change**, but worth
+  recording since it now calls the domain interface where it didn't
+  before: lines 37 and 43,
+  `Games.update_game_settings!(game, %{min_players: N}, actor: %{id:
+  game.owner_id})` — already correctly actored for rule 3b (decisions
+  7-8); `MinimumPlayers.validate/3` itself is called directly on a
+  bare changeset (`authorize?: false`), never through an authorized action.
+- **`test/werewolf_ash/games/game/validations/role_composition_fits_test.exs`
+  (new, qss.14) — no change**: every `Games.update_game_settings!` call
+  (lines 36, 46, 60) already passes `actor: %{id: game.owner_id}`;
+  `RoleCompositionFits.validate/3` is called directly on a bare changeset.
+- **`test/werewolf_ash/games/player/validations/game_not_full_test.exs`
+  (new, qss.14) — no change**: the one `Games.update_game_settings!` call
+  (line 65) already passes `actor: %{id: game.owner_id}`;
+  `GameNotFull.validate/3` is called directly on a bare changeset.
+- **`test/werewolf_ash/games/game/role_assignment_test.exs`,
+  `test/werewolf_ash/games/game/validations/composition_fits_at_cap_test.exs`,
+  `manual_werewolf_count_valid_test.exs`, `max_players_not_below_seated_test.exs`,
+  `min_not_above_max_test.exs`, `positive_player_bounds_test.exs`,
+  `test/werewolf_ash/games/game/changes/advance_phase_test.exs`,
+  `test/werewolf_ash/games/game/validations/actor_is_owner_test.exs`,
+  `test/werewolf_ash/games/player/validations/game_in_lobby_test.exs` — no
+  change**, confirmed by grep for any `Games.`/`Ash.` call in each
+  (`grep -n "Games\.\|Ash\." <file>` for every file in this bullet): none
+  makes a domain-interface call at all; each exercises its own
+  validation/pure-function module directly (`RoleAssignment.composition/2`,
+  `CompositionFitsAtCap.validate/3`, `ManualWerewolfCountValid.validate/3`,
+  `MaxPlayersNotBelowSeated.validate/3`, `MinNotAboveMax.validate/3`,
+  `PositivePlayerBounds.validate/3`, `AdvancePhase.change/3`,
+  `ActorIsOwner.validate/3`, `GameInLobby.check/3`) on bare
+  changesets/structs.
 
 ## Touches
 
 Advisory only.
 
 - `lib/werewolf_ash/games/game.ex` — `authorizers: [Ash.Policy.Authorizer]`,
-  a `policies do` block for rules 1-3.
+  a `policies do` block for rules 1, 2, 3a and 3b (the owner-only policy on
+  both `:start` and `:update_settings`); and, the production change rules
+  3a/3b both require, `validate ActorIsOwner, before_action?: true` on
+  both the `:start` and `:update_settings` action blocks (in place of the
+  plain `validate ActorIsOwner` each has today) — without this, the policy
+  added above is unreachable for a non-owner/anonymous actor (verified by
+  running a scratch resource, see rule 3a; this is a real change to
+  existing production code, not just new code).
+- `lib/werewolf_ash/games/player/changes/resolve_game_by_join_code.ex:20` —
+  `authorize?: false` added to its `Games.get_game_by_join_code(join_code)`
+  call (rule 4's third forced consequence); without this, every `:join`
+  fails once `Game` gains its read policy, regardless of rule 6 leaving
+  `Player`'s own `:join` policy open.
 - `lib/werewolf_ash/games/player.ex` — `authorizers: [...]`, `policies do`
   for rules 4/6, `field_policies do` for rule 5, including the `:finished`
   condition and the "dead sees everything" condition (both added
@@ -1343,22 +1921,33 @@ Advisory only.
   `authorize?: false` on `protected?/2`'s `Games.list_actions!` call, in
   place of the forwarded `opts` (rule 8's forced consequence of narrowing
   `:protect`); its other calls in the same function are unchanged.
-- `lib/werewolf_ash/games/reactors/resolve_lynch.ex` — conditional, not a
-  file this bead creates: if it already exists when this bead is
-  implemented (qss.5 landed first), its vote-tallying read needs
-  `authorize?: false` too (rule 8's second forced consequence); grep for it
-  at that time, don't assume it's missing or already fixed.
+- `lib/werewolf_ash/games/reactors/resolve_lynch.ex` — **no production
+  change**: qss.5 merged this file with `authorize?: false` already on its
+  vote-tallying read, and its `[:actor, :target]` load already inherits the
+  same flag (settled fact now, not a conditional — see rule 8's own entry
+  and its `deps/ash` citations). Left here only so the coder knows to
+  re-verify it rather than assume either this spec or the file is wrong.
 - `lib/werewolf_ash/games/message.ex` — `policies do` for rules 10-11 (needs
   `authorizers: [Ash.Policy.Authorizer]` added too; it isn't there yet).
 - `lib/werewolf_ash/games/reactors/check_win.ex` — `authorize?: false` on the
   `read :living_players` step (rule 4's forced consequence).
-- `lib/werewolf_ash/games/game/changes/deal_roles.ex:27` — `authorize?: false`
-  on its `list_players!` call (rule 4's other forced consequence); its
-  `update_player` call two lines later already forwards `opts` and is
-  unchanged.
-- `lib/werewolf_ash/games/player/validations/user_has_name.ex` — **no
-  change**; already uses `authorize?: false` (checked this round, see the
-  note under "Existing tests this will break").
+- `lib/werewolf_ash/games/game/changes/deal_roles.ex:28` — `authorize?: false`
+  on its `list_players!` call (rule 4's other forced consequence, rewritten
+  this revision — verify the failure mode against rule 4 itself, not the
+  previous revision's description); its `update_player` call two lines
+  later already forwards `opts` and is unchanged.
+- `lib/werewolf_ash/games/player/validations/user_has_name.ex`,
+  `lib/werewolf_ash/games/action/validations/actor_alive.ex`,
+  `actor_and_target_in_game.ex`, `no_consecutive_protect.ex`,
+  `shoot_requires_pending_hunter.ex`, `target_alive.ex`,
+  `type_requires_phase_and_role.ex` (qss.4/qss.18's `Action` validations),
+  `lib/werewolf_ash/games/game/validations/max_players_not_below_seated.ex`,
+  `minimum_players.ex`, `role_composition_fits.ex` and
+  `lib/werewolf_ash/games/player/validations/game_not_full.ex` (qss.14's and
+  qss.3's `Game`/`Player` validations) — **no change to any of them**;
+  every one already reads with `authorize?: false` (re-checked this round,
+  file by file — see "Existing tests this will break"). Listed here only so
+  the coder doesn't have to rediscover this by re-reading every file.
 - `lib/werewolf_ash/accounts/user.ex` — rules 13/15/17: the narrow
   shared-game grant (rule 17) plus `:email`'s field policy, and a
   `has_many :players, WerewolfAsh.Games.Player` relationship to express it.
@@ -1373,11 +1962,19 @@ Advisory only.
   :user])`, or an `expr(exists(...))` in the same shape as
   `Message.Visibility.visible_to/1`). Confirm which built-in check (or plain
   `expr`) resolves this statically for a `:create` action before picking one.
-- `test/support/generators.ex`, and the existing test files listed under
-  "Existing tests this will break" — `test/werewolf_ash/games/action_test.exs`
-  needs the most work of these: a data-shape addition exposing each seated
-  player's own `User` (see that file's entry) so its `create_action`/
-  `create_kill_action` calls can pass a real, correct `actor:`.
+- `test/support/generators.ex`, and every existing test file listed under
+  "Existing tests this will break" — in particular
+  `test/werewolf_ash/games_test.exs` (touched across nearly every describe
+  block, including its new "day vote resolution," "update_game_settings"
+  and "end to end: owner-configured role composition" blocks) and
+  `test/werewolf_ash/games/action_test.exs` (the most work of any file: a
+  data-shape addition exposing each seated player's own `User`, including
+  the ad-hoc `outsider`/`outsider_wolf`/`other_wolf` players qss.18/qss.20
+  added, so every `create_action`/`create_kill_action` call can pass a
+  real, correct `actor:`), plus
+  `test/werewolf_ash/games/reactors/resolve_lynch_test.exs` and
+  `test/werewolf_ash/games/game/changes/resolve_day_vote_test.exs` (qss.5's
+  own new test files, neither previously covered by this spec).
 - New test files/modules for the policies themselves — one per resource
   reads naturally (e.g. `test/werewolf_ash/games/game/policy_test.exs`,
   `.../player/policy_test.exs`, `.../action/policy_test.exs`,
