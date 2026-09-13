@@ -39,9 +39,18 @@ defmodule WerewolfAsh.Games.PolicyEndToEndTest do
       Games.list_players!(query: [filter: [game_id: game.id]], authorize?: false)
       |> Map.new(&{&1.id, &1})
 
+    # start_game deals roles at random across all five seated players, so
+    # every seat gets pinned to :villager except the one meant to be the
+    # werewolf - leaving the owner's or bystander's dealt role to chance
+    # could otherwise land a second werewolf on one of them, changing the
+    # living wolves/non-wolves count enough to decide the game at dusk
+    # (rule 8's own end-of-day win check) before the kill below ever runs.
     villager = Games.update_player!(players_by_id[villager.id], %{role: :villager})
     werewolf = Games.update_player!(players_by_id[werewolf.id], %{role: :werewolf})
-    bystander = players_by_id[bystander.id]
+    bystander = Games.update_player!(players_by_id[bystander.id], %{role: :villager})
+
+    owner_player = Enum.find(Map.values(players_by_id), &(&1.user_id == owner.id))
+    Games.update_player!(owner_player, %{role: :villager})
 
     dead_villager =
       players_by_id[dead_villager.id]
