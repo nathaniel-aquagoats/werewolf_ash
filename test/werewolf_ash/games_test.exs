@@ -982,6 +982,15 @@ defmodule WerewolfAsh.GamesTest do
       assert phase.ended_at == ended_at
       assert phase.summary == %{"lynched" => nil}
     end
+
+    test "can be destroyed through the domain", %{game: game} do
+      phase = Games.create_phase!(game.id, :day, 1)
+
+      assert :ok = Games.destroy_phase(phase)
+
+      assert {:error, %Ash.Error.Invalid{errors: [%Ash.Error.Query.NotFound{}]}} =
+               Games.get_phase(phase.id)
+    end
   end
 
   describe "actions" do

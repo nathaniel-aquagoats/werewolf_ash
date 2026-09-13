@@ -388,6 +388,121 @@ defmodule WerewolfAsh.Games.ActionTest do
         })
       end
     end
+
+    test "a landed kill that brings wolves to parity finishes the game (werewolf_ash-qss.6 rules 1, 3)",
+         %{players: p, night: night} do
+      # Bring the non-wolves down to just the target ahead of the kill, the
+      # same way resolve_win_test.exs reaches precise counts, so the kill
+      # itself is the one that reaches exact wolf parity.
+      Games.update_player!(p.bodyguard, %{alive: false})
+      Games.update_player!(p.hunter, %{alive: false})
+
+      action = Games.create_kill_action!(night.id, p.werewolf.id, p.villager.id)
+
+      assert action.result == %{"killed" => true}
+
+      reloaded = Games.get_game!(night.game_id)
+      assert reloaded.state == :finished
+      assert reloaded.winner == :wolves
+    end
+
+    test "a landed kill that does not reach parity leaves the game in :night with no winner (werewolf_ash-qss.6 rule 4)",
+         %{players: p, night: night} do
+      action = Games.create_kill_action!(night.id, p.werewolf.id, p.villager.id)
+
+      assert action.result == %{"killed" => true}
+
+      reloaded = Games.get_game!(night.game_id)
+      assert reloaded.state == :night
+      assert is_nil(reloaded.winner)
+    end
+
+    test "a landed, non-decisive kill on the dealt hunter is a plain death (werewolf_ash-qss.6 rule 5)",
+         %{players: p, night: night} do
+      action = Games.create_kill_action!(night.id, p.werewolf.id, p.hunter.id)
+
+      assert action.result == %{"killed" => true}
+      assert Games.get_player!(p.hunter.id).alive == false
+
+      reloaded = Games.get_game!(night.game_id)
+      assert reloaded.state == :night
+    end
+
+    test "a spent (protected) kill runs no win check even at exact wolf parity going in (werewolf_ash-qss.6 rule 2)",
+         %{players: p, day: day, night: night} do
+      Games.create_action!(day.id, p.bodyguard.id, p.villager.id, :protect)
+
+      # Kill everyone but the (protected) target directly, so the living
+      # counts going into this kill already sit at exact wolf parity: a
+      # check-runs-regardless-of-spent implementation would finish the game
+      # here, a correct one leaves it alone.
+      Games.update_player!(p.seer, %{alive: false})
+      Games.update_player!(p.hunter, %{alive: false})
+      Games.update_player!(p.bodyguard, %{alive: false})
+
+      action = Games.create_kill_action!(night.id, p.werewolf.id, p.villager.id)
+
+      assert action.result == %{"killed" => false}
+      assert Games.get_player!(p.villager.id).alive == true
+
+      reloaded = Games.get_game!(night.game_id)
+      assert reloaded.state == :night
+      assert is_nil(reloaded.winner)
+    end
+  end
+
+  describe "end_night (werewolf_ash-qss.6)" do
+    setup do
+      %{game: game, players: p} = started_game()
+      day = current_phase(game)
+      game = Games.end_day!(game, %{now: @dusk})
+      night = current_phase(game)
+      %{game: game, players: p, day: day, night: night}
+    end
+
+    test "a night containing a landed, non-decisive kill transitions cleanly to :day, untouched by the transition (rule 6)",
+         %{game: game, players: p, night: night} do
+      Games.create_kill_action!(night.id, p.werewolf.id, p.villager.id)
+
+      actions_before = Games.list_actions!(query: [filter: [phase_id: night.id]])
+      kill_count_before = Enum.count(actions_before, &(&1.type == :kill))
+
+      game = Games.end_night!(game, %{now: @dawn})
+
+      actions_after = Games.list_actions!(query: [filter: [phase_id: night.id]])
+      kill_count_after = Enum.count(actions_after, &(&1.type == :kill))
+
+      assert game.state == :day
+      assert Games.get_player!(p.villager.id).alive == false
+      assert length(actions_after) == length(actions_before)
+      assert kill_count_after == kill_count_before
+
+      assert [kill_action] = Enum.filter(actions_after, &(&1.type == :kill))
+      assert kill_action.result == %{"killed" => true}
+    end
+
+    test "a night whose living counts already decide the game finishes at dawn, leaving no day phase (rules 9, 10)",
+         %{game: game, players: p, night: night} do
+      Games.update_player!(p.bodyguard, %{alive: false})
+      Games.update_player!(p.hunter, %{alive: false})
+      Games.update_player!(p.seer, %{alive: false})
+
+      game = Games.end_night!(game, %{now: @dawn})
+
+      assert game.state == :finished
+      assert game.winner == :wolves
+
+      assert Games.list_phases!(
+               query: [
+                 filter: [game_id: game.id, kind: :day, number: night.number + 1]
+               ]
+             ) == []
+
+      assert Games.list_phases!(query: [filter: [game_id: game.id]])
+             |> Enum.all?(&(not is_nil(&1.ended_at)))
+
+      refute is_nil(Games.get_phase!(night.id).ended_at)
+    end
   end
 
   describe "end to end" do
@@ -466,6 +581,36 @@ defmodule WerewolfAsh.Games.ActionTest do
 
       assert kill.result == %{"killed" => false}
       assert Games.get_player!(p.villager.id).alive == true
+    end
+
+    test "two day/night cycles: bodyguard protects, a kill lands, the seer investigates a wolf and then a non-wolf (werewolf_ash-qss.6 rules 1, 4, 6, 8, 11)" do
+      %{game: game, players: p} = started_game()
+      day1 = current_phase(game)
+
+      protect1 = Games.create_action!(day1.id, p.bodyguard.id, p.hunter.id, :protect)
+
+      game = Games.end_day!(game, %{now: @dusk})
+      night1 = current_phase(game)
+
+      kill = Games.create_kill_action!(night1.id, p.werewolf.id, p.villager.id)
+      assert kill.result == %{"killed" => true}
+
+      seer_action1 = Games.create_action!(night1.id, p.seer.id, p.werewolf.id, :investigate)
+      assert seer_action1.result == %{"is_werewolf" => true}
+
+      game = Games.end_night!(game, %{now: @dawn})
+
+      assert game.state == :day
+      assert Games.get_player!(p.villager.id).alive == false
+      assert Games.get_action!(seer_action1.id).result == %{"is_werewolf" => true}
+      assert Games.get_action!(protect1.id).target_id == p.hunter.id
+      assert Games.get_player!(p.hunter.id).alive == true
+
+      game = Games.end_day!(game, %{now: ~U[2026-06-16 20:00:00Z]})
+      night2 = current_phase(game)
+
+      seer_action2 = Games.create_action!(night2.id, p.seer.id, p.hunter.id, :investigate)
+      assert seer_action2.result == %{"is_werewolf" => false}
     end
 
     test "hunter path: only the dead, pending hunter may shoot" do
