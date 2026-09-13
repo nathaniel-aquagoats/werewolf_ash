@@ -4,16 +4,17 @@ Depends on: none
 
 ## For the owner
 
-**What changes.** Players will only see the games, rosters, and messages they actually have a seat in — a game you're not part of won't show up at all. Everyone sees their own role; werewolves also see each other's roles and the pack's kill, and the seer sees their own investigation results, but no other role or action detail leaks out. Only the game's owner can start it, and every vote, kill, investigation, protection, shot, or chat message a player sends must be sent as themselves, never on someone else's behalf.
+**What changes.** Players will only see the games, rosters, and messages they actually have a seat in — a game you're not part of won't show up at all. While a game is in progress and a player is still alive: they see their own role; werewolves also see each other's roles and the pack's kill; the seer sees their own investigation results; the bodyguard sees their own protection; no other role or action detail leaks out. Once a player dies, they become a spectator for the rest of that game and can see everything in it — every role, every kill, investigation, protection, and shot — though they still cannot vote, act, or post. Once a game ends, every role is revealed to everyone who played it. Only the game's owner can start it, and every vote, kill, investigation, protection, shot, or chat message a player sends must be sent as themselves, never on someone else's behalf.
 
-**Decisions for you.**
-1. Should bodyguard protections and hunter shots stay visible to the whole game roster, the same as votes, or be kept as private as the wolf kill and seer investigation? **Recommended:** leave them visible to everyone — only the kill and the investigation are singled out for secrecy.
-2. Does a werewolf who dies keep seeing fellow wolves' roles and the pack's kill afterward, or does that knowledge end at death? **Recommended:** keeps seeing both — nothing in the design narrows it to living wolves only.
-3. Once a game ends, do all roles become visible to everyone, or stay as hidden as they were during play? **Recommended:** stay hidden for now — a full reveal at game-end is separate follow-up work, not part of this change.
-4. Should seating another user into a game (useful today for testing/setup) keep working, or should every seat always have to be claimed by the person taking it? **Recommended:** leave it open for now; tightening it belongs to the upcoming public sign-up feature.
-5. Can a player see a fellow player's display name, or only their own? **Recommended:** yes, to a shared game's roster names (not emails) — this is what lets the roster show names instead of blanks.
+**Decisions.**
+1. **Decided:** a bodyguard's protection is visible only to the bodyguard who chose it, the same as the wolf kill and the seer's investigation — this closes off telling the wolves whom to avoid once protection can change during the day. Hunter shots stay visible to everyone, the same as votes.
+2. **Decided (now just one case of decision 6, below):** a dead werewolf keeps seeing fellow wolves' roles and the pack's kill — nothing in the design narrows it to living wolves only, and it's no longer even a wolf-specific rule: see decision 6.
+3. **Decided:** once a game reaches `:finished`, every player's role becomes visible to every seat in that game — built here, not left to the separate follow-up bead that was going to own it.
+4. **Decided:** seating another user into a game (useful today for testing/setup) stays open for now; tightening it belongs to the upcoming public sign-up feature.
+5. **Decided:** a player can see a fellow player's display name, not their email, in a shared game — this is what lets the roster show names instead of blanks.
+6. **Decided:** a dead player is a spectator in an afterlife for the rest of that game — once your own seat has died, you see everything in it: every role, every kill, investigation and protection, not just your own team's. You still cannot vote, act, or post once dead (unchanged).
 
-**Rule changes.** Add to the settled decisions: "a player may read a game, its roster, and its messages only while seated in it (any role, dead or alive); a player sees only their own role, except werewolves also see each other's; the night's kill is visible to werewolves only, and an investigation result only to the seer who made it; only the game's owner may start it; every vote, kill, investigation, protection, shot, or chat message must be submitted as the sender's own seat, never on another player's behalf."
+**Rule changes.** Add to the settled decisions: "a player may read a game, its roster, and its messages only while seated in it (any role, dead or alive); a player sees only their own role, except werewolves also see each other's, and once a game reaches `:finished` every role is visible to every seat (qss.19 adds the dawn reveal of dead players' roles); the night's kill is visible to werewolves only, an investigation result only to the seer who made it, and a protection only to the bodyguard who chose it; a dead player is a spectator for the rest of that game and sees everything in it regardless of the rules above, though they still cannot vote, act, or post; only the game's owner may start it; every vote, kill, investigation, protection, shot, or chat message must be submitted as the sender's own seat, never on another player's behalf."
 
 ## Assumptions
 
@@ -44,12 +45,23 @@ different reader could make differently.
    "your own role only" default's one exception), and werewolves also see
    `:kill` `Action` rows. Nothing in the bead's list says a *dead*
    werewolf loses either of these, so this spec does not gate either grant on
-   `alive`.
-4. **`:vote`, `:protect` and `:shoot` visibility is not narrowed** beyond
-   ordinary game membership. Only `:kill` and `:investigate` are called
-   out by the bead's description; inventing a bodyguard/hunter secrecy rule
-   to match wolf/seer symmetry is tempting but not written anywhere, so it
-   isn't built here. Flagging this in case the intended reading was broader.
+   `alive`. (Superseded in effect, not in wording, by the broader
+   2026-09-13 "the dead see everything" decision in rules 5/8/Assumption 6:
+   a dead werewolf's `:kill`/fellow-role visibility no longer needs this
+   assumption to survive death, since *every* dead seat now sees everything
+   regardless of role. This assumption still correctly describes the
+   *living*-werewolf grant, which is role-conditioned and not superseded.)
+4. **Revised 2026-09-13, by owner decision: `:protect` is narrowed the same
+   way as `:investigate`; `:vote` and `:shoot` are not.** The previous
+   reading of this assumption left all three at the ordinary-game-membership
+   baseline, since only `:kill` and `:investigate` were named by the bead's
+   description. Superseded: with qss.21 making a bodyguard's protection
+   changeable and withdrawable during the day, a `:protect` row visible to
+   the whole roster would tell the wolves whom to avoid before night falls —
+   the same secrecy problem `:kill` and `:investigate` already avoid, and
+   the owner resolved it the same way, in chat before this revision. `:vote`
+   and `:shoot` are unaffected: nothing about either changed, and the owner
+   was not asked to revisit them. See rule 8 for the narrowed condition.
 5. **Every Game/Player/Action action not named by a rule below is left
    exactly as open as it is today** (`authorize_if always()`), rather than
    silently falling into Ash's default-deny the moment an authorizer is
@@ -60,12 +72,19 @@ different reader could make differently.
    both invent requirements and collide with other beads' designs (qss.14
    owns game-settings updates; the reactors that will eventually drive
    `update_player`/`update_action` are qss.5-8's territory).
-6. **The chat "dead read everything" rule is not extended to `Action`
-   reads.** That rule is chat-specific (qss.12); nothing in this bead's list
-   says the same for `:kill` rows/investigate results, so a `:kill` row is
-   visible to any werewolf seat (dead included, per point 3) and an
-   `:investigate` row only to the seer who cast it — dead-or-alive status
-   plays no role in either.
+6. **Superseded 2026-09-13, by owner decision: the dead see everything in
+   their own game, and that now covers `Action` reads (and `Player.role`)
+   too — see rules 5 and 8.** The previous reading held that chat's own
+   "dead read everything" rule (qss.12) was chat-specific and did not extend
+   to `:kill`/`:investigate` visibility, so a dead non-wolf still could not
+   read a `:kill` row and a dead non-seer still could not read another
+   seer's `:investigate` row. The owner's broader "a dead player is a
+   spectator in an afterlife" decision replaces that reading outright: it is
+   not scoped to chat, and this spec no longer treats chat's rule and this
+   one as separate. `:kill` remains visible to any *living* werewolf seat
+   regardless of the row's own actor (point 3, unaffected); what changes is
+   that a *dead* seat of any role now also sees it, and every other
+   restricted row type besides.
 7. **The two "From 27w.1 review" `Accounts` notes are folded in as rules 13-17**,
    even though `User` is not a "Games resource," because the bead's NOTES
    assign them here explicitly. One of the four sub-items — deciding whether
@@ -179,15 +198,91 @@ its existing sign-in/current-user surface, a token-revocation test, and a
 5. `Player` gains a field policy on `:role`: visible when the row is the
    reading actor's own seat, or when the reading actor holds a `:werewolf`
    seat in the same game *and* the row's own role is also `:werewolf`
-   ("fellow wolves"); hidden in every other case. Ash's field-policy rule that
-   "if any field policy exists, every field needs one" means `Player` also
-   needs a catch-all for its other fields (`id`, `game_id`, `user_id`,
-   `alive`, `joined_at`) left open to anyone who already passes rule 4's
-   resource-level read policy — this field policy narrows `:role` alone. A
-   hidden role comes back as Ash's `%Ash.ForbiddenField{}` sentinel, not
-   `nil` — tests must tell that apart from a real not-yet-dealt `role: nil`.
-   (qss.17's later "everyone sees every role once the game is `:finished`"
-   flip is not built here — see Out of scope.)
+   ("fellow wolves"), or **(added 2026-09-13, by owner decision)** when the
+   row's own game has reached `:finished` — at that point every seat's role
+   is visible to every other seat in the same game, living or dead, no
+   condition on the reader at all — or **(added 2026-09-13, by owner
+   decision)** when the reading actor's own seat in that same game is dead:
+   "the dead see everything," a dead player is a spectator in an afterlife
+   for the rest of that one game, so every other seat's role is visible to
+   them regardless of team, once their own seat has died. (They still cannot
+   *act* or post — this field policy only governs reads; rules 2/6/7's open
+   write policies and `AuthorMayPost`'s own validation are unchanged, and
+   nothing about death gates `:create` anywhere in this bead.) Hidden in
+   every other case. Ash's
+   field-policy rule that "if any field policy exists, every field needs
+   one" means `Player` also needs a catch-all for its other fields (`id`,
+   `game_id`, `user_id`, `alive`, `joined_at`) left open to anyone who
+   already passes rule 4's resource-level read policy — this field policy
+   narrows `:role` alone. A hidden role comes back as Ash's
+   `%Ash.ForbiddenField{}` sentinel, not `nil` — tests must tell that apart
+   from a real not-yet-dealt `role: nil`.
+
+   The `:finished` condition is an `expr` crossing the `game` relationship
+   (`expr(game.state == :finished)`, alongside the existing own-seat/
+   fellow-wolf `authorize_if`s in the same `field_policy :role` block, all
+   OR'd together per Ash's normal multiple-checks-in-one-policy semantics).
+   This is not a novel shape: the DSL already supports a field policy
+   `authorize_if expr(...)` reading a field through a `belongs_to`
+   relationship, one hop, exactly like `Player`'s own `belongs_to :game`
+   here (`deps/ash/documentation/topics/security/policies.md:946-950`'s
+   `field_policy :email, always() do authorize_if expr(user.id ==
+   ^actor(:id)) end` example, crossing a `user` relationship the same way).
+   The relationship crossed by a field-policy `expr` is not itself
+   re-authorized through `Game`'s own read policy (rule 1) — the field
+   policy's check compiles to a loaded `Ash.Resource.Calculation.Expression`
+   (`deps/ash/lib/ash/policy/authorizer/authorizer.ex:1558,1640-1649`), and per
+   `deps/ash/documentation/topics/security/policies.md:889-895`'s
+   "Calculations" section, "the dependencies of a calculation do not have
+   any authorization applied to them" — so a reading `Player`'s own `game`
+   relationship resolves for this check regardless of whether that actor
+   could independently pass `Game`'s `:read` policy on that row. (In
+   practice they always could, per rule 4/1's shared baseline, but the field
+   policy does not depend on it either way.)
+
+   The "dead sees everything" condition is a second, independent `expr` in
+   the same `field_policy :role` block:
+   `expr(exists(game.players, user_id == ^actor(:id) and not alive))` —
+   "does the reading actor hold *some* seat, any seat, in this row's game,
+   and is that seat's own `alive` false." This is not a new relationship
+   shape either: `WerewolfAsh.Games.Message.Visibility.visible_to/1`
+   (`lib/werewolf_ash/games/message/visibility.ex:32-34`) already builds
+   exactly this — `expr(exists(game.players, ^player_match and
+   ^player_may_read()))` — and `player_may_read/0`
+   (`lib/werewolf_ash/games/message/visibility.ex:21-23`) already writes
+   `not alive` in an expr the same way. What's new here is only that this
+   `exists` sits inside a *field* policy rather than a *row* policy, i.e.
+   whether the field-policy compiler (rule 5's `:finished` paragraph above)
+   accepts an `exists`-shaped expression at all, not just a plain
+   dotted-path one. It does: `Ash.Resource.Calculation.Expression.load/3`
+   (`deps/ash/lib/ash/resource/calculation/expression.ex:103-140`) walks the
+   compiled expression with `Ash.Filter.list_refs/1`, which has its own
+   clause for a related `%Ash.Query.Exists{at_path: at_path, path: path,
+   expr: expr}` (`deps/ash/lib/ash/filter/filter.ex:2825-2840`): it recurses
+   into the exists's own inner `expr` and returns the plain attribute refs
+   it finds there (`user_id`, `alive`) with their `relationship_path`
+   prefixed by `at_path ++ path` — i.e. `["game", "players"]` — the same
+   "plain attribute ref at a relationship path" shape `game.state` already
+   uses in the `:finished` condition above, just one hop further out. There
+   is no separate aggregate-loading step for `exists` itself: the path this
+   returns is what gets loaded, `game.players` is then present on the
+   record, and `exists(...)`'s own boolean is evaluated in memory over that
+   loaded data when the calculation runs
+   (`Ash.Resource.Calculation.Expression.calculate/3`, same module, via
+   `Ash.Expr.eval_hydrated/2` and `Ash.Filter.Runtime`'s own `Exists`
+   resolution). No separate check module is needed for either condition; a
+   coder could reasonably move both into a
+   `WerewolfAsh.Games.Player.Visibility` helper mirroring `Message.Visibility`'s
+   shape, but nothing in this bead requires it.
+
+   This absorbs the role-reveal half of qss.17's description
+   ("`Game.state == :finished` reveals every role to every seat"), which the
+   owner folded into this bead on 2026-09-13 (qss.17's own NOTES record it).
+   It does not absorb qss.17's other two mentions: "alive status" needs no
+   change (already unconditional under rule 4's baseline, before and after
+   this bead); "the game-over event carries the winner" is qss.11's. See
+   `werewolf_ash-qss.19`'s bead NOTES for a related gap this rule does not
+   settle: qss.19's own dawn reveal of a dead player's role.
 6. `Player`'s `:create`, `:join`, `:update` and `:destroy` actions stay
    exactly as open as they are today (`authorize_if always()`) — `:join` is
    named explicitly here, not left to fall through Assumption 5's general
@@ -206,16 +301,164 @@ its existing sign-in/current-user surface, a token-revocation test, and a
    Assumption 2) — anyone else's `actor_id`, or no actor at all, is
    forbidden. This is independent of, and does not replace, qss.4's merged
    role/phase/aliveness/once-per-phase validations.
+
+   **Conditional extension, added 2026-09-13 per the qss.21 spec review:**
+   qss.21 (changeable day votes/protections; unmerged as of this revision,
+   and not a dependency of this bead in either direction) adds a *generic*
+   `Action` action, `:withdraw` (code interface `withdraw_action/3`, taking
+   `phase_id`, `actor_id` and `type` as arguments), which deletes or
+   resolves the matching row rather than operating on one already loaded —
+   it has no changeset and no row of its own to check `actor_id` against.
+   If `Action` has a `:withdraw` action by the time this bead is
+   implemented, it gets the same "only as yourself" policy as `:create`/
+   `:kill` above, but written against the *argument*, not a row attribute:
+   the `actor_id` argument must reference a `Player` whose `user_id` equals
+   the calling actor's id; anyone else's `actor_id` argument, or no actor at
+   all, is forbidden. Left unnamed, `:withdraw` falls to Assumption 5's
+   `authorize_if always()` default and anyone could withdraw anyone else's
+   vote or protection.
+
+   A generic action's policy cannot reuse `:create`/`:kill`'s own check
+   unchanged, because there is no changeset relationship to cross, and it
+   cannot be a plain `expr()`/`Ash.Policy.FilterCheck` either, even one
+   built from `arg(:actor_id)`: this must be a custom
+   `Ash.Policy.SimpleCheck` that looks the `Player` up itself, the exact
+   check qss.21's own spec rule 11 already specifies — read
+   `docs/specs/werewolf_ash-qss.21.md` rule 11 before writing this so both
+   specs describe the same check; this paragraph only restates it for a
+   coder who reaches 27w.2 without qss.21 open.
+
+   A `SimpleCheck`'s `match?/3` receives the actor and the full
+   `Ash.Policy.Authorizer.t()` as its context — not a filterable
+   query/changeset — per its own typespec, `@type context ::
+   Ash.Policy.Authorizer.t()`
+   (`deps/ash/lib/ash/policy/simple_check.ex:39`), and that struct carries
+   the in-flight `action_input: Ash.ActionInput.t() | nil` field directly
+   (`deps/ash/lib/ash/policy/authorizer/authorizer.ex:32`). The check reads
+   `Ash.ActionInput.get_argument(action_input, :actor_id)`
+   (`deps/ash/lib/ash/action_input.ex:516`), looks up that `Player` with
+   `authorize?: false` (a game-rule identity check, not an access check —
+   the same convention `Message.Validations.AuthorMayPost` and
+   `Player.Validations.UserHasName` already use), and returns whether its
+   `user_id` equals the actor's id — `{:ok, false}` (not raising) for a
+   missing or mismatched `Player`, or no actor at all.
+
+   A filter-style check (`expr()`, including one built from
+   `^arg(:actor_id)` alone, or an `exists(Player, ...)` "unrelated exists")
+   does not work here and must not be used: an `Ash.Policy.FilterCheck` on
+   an `Ash.ActionInput` is evaluated in memory via
+   `Ash.Expr.eval_hydrated/2`, filling `arg(...)` from
+   `action_input.arguments` (`deps/ash/lib/ash/policy/filter_check.ex:154-186`
+   `try_eval/2`'s `action_input` clause) — there is no query and no loaded
+   record for it to run a data-layer `EXISTS` against. `exists`'s own
+   in-memory evaluator returns `:unknown`, not `true`/`false`, whenever
+   there is no record to resolve it against
+   (`deps/ash/lib/ash/filter/runtime.ex:559-565`,
+   `resolve_expr(%Ash.Query.Exists{}, nil, ...)`), and a generic action's
+   authorization step raises outright the moment strict-checking any policy
+   on it produces a filter (or a runtime "continue") instead of a plain
+   `:authorized`/`:forbidden` decision — `"Cannot use filter checks with
+   generic actions"` (`deps/ash/lib/ash/actions/action.ex:398-410`) or
+   `"Cannot use runtime checks with generic actions"`
+   (`deps/ash/lib/ash/actions/action.ex:412-417`). A `SimpleCheck` sidesteps
+   this entirely because it never becomes a filter: `match?/3` runs its own
+   database lookup and returns a plain boolean before strict-checking ever
+   needs to reduce anything to a query.
+
+   If `Action` has no `:withdraw` action at implementation time, this
+   paragraph does not apply and nothing here needs building; per qss.21's
+   own rule 11, if `:withdraw` is implemented before `Action` gains this
+   bead's authorizer, qss.21's own coder adds this same check instead, using
+   the identical mechanism.
 8. `Action`'s `:read` action is restricted: an actor may read an `Action` row
    only while they hold a seat — any role, alive or dead — in that row's
    phase's game (the same baseline as rules 1 and 4), except:
    - a `:kill` row additionally requires the reading actor to hold a
      `:werewolf` seat in that game;
    - an `:investigate` row additionally requires the reading actor's own
-     seat to be the row's `actor` (the seer who cast it).
+     seat to be the row's `actor` (the seer who cast it);
+   - **(revised 2026-09-13)** a `:protect` row additionally requires the
+     reading actor's own seat to be the row's `actor` (the bodyguard who
+     cast it) — the same shape as `:investigate`, and for the same reason:
+     qss.21 makes protection changeable and withdrawable during the day, so
+     a public `:protect` row would tell the wolves whom to avoid before
+     night falls. Per Assumption 4 (revised), this narrows what was
+     previously an unnarrowed baseline row.
 
-   `:vote`, `:protect` and `:shoot` rows get no narrowing beyond the
-   baseline, per Assumption 4.
+   **(added 2026-09-13, by owner decision)** None of these three narrowings
+   apply once the reading actor's own seat in that row's phase's game is
+   dead: "the dead see everything" (the same decision as rule 5's fourth
+   `:role` case) means a dead reader sees every `:kill`, `:investigate` and
+   `:protect` row in that game, cast by or aimed at anyone, the same as a
+   living reader already sees every `:vote`/`:shoot` row. The expression is
+   the three-hop version of rule 5's own "dead" condition — `Action` has no
+   direct `game` relationship, only `belongs_to :phase`
+   (`lib/werewolf_ash/games/action.ex:111-114`), and `Phase` has
+   `belongs_to :game` (`lib/werewolf_ash/games/phase.ex:69-72`), so the same
+   `exists(_.players, user_id == ^actor(:id) and not alive)` shape becomes
+   `expr(exists(phase.game.players, user_id == ^actor(:id) and not
+   alive))`. This is not a deeper crossing than the baseline this same rule
+   already needs: reaching `phase.game.players` at all is exactly the path
+   rule 8's own opening sentence already requires ("hold a seat ... in that
+   row's phase's game"), just without the `not alive` qualifier — a coder
+   implementing the baseline and this exception writes the same relationship
+   path twice, once with each condition.
+
+   `:vote` and `:shoot` rows get no narrowing beyond the baseline, per
+   Assumption 4 — a dead reader already sees them, the same as a living one.
+
+   **Forced consequence of narrowing `:protect`:**
+   `WerewolfAsh.Games.Action.Changes.ApplyKill.protected?/2`
+   (`lib/werewolf_ash/games/action/changes/apply_kill.ex:43-59`) looks up the
+   `:protect` row for the kill's target and preceding day phase from inside
+   the `:kill` action's own `after_action` hook
+   (`lib/werewolf_ash/games/action/changes/apply_kill.ex:26-29`), via
+   `Games.list_actions!(Keyword.merge(opts, query: [filter: [phase_id:
+   day_phase.id, type: :protect, target_id: action.target_id]]))` where
+   `opts` is `Context.to_opts(context)` — the real `:kill` changeset's own
+   context, i.e. the actor is the werewolf who submitted the kill, not the
+   bodyguard. Once `:protect` is narrowed to the bodyguard who cast it, this
+   call, run under the werewolf's own actor, would see no `:protect` row
+   ever, whether or not one exists: `protects != []` (line 55) would always
+   be `false`, so a protected target would die on every kill and the
+   protection mechanism would silently stop working, in production, not
+   just in tests. This is a game rule deciding whether a kill lands, not an
+   access check by any of the actors involved — the same reasoning rule 4's
+   `CheckWin` and `deal_roles.ex` reads already use. This one query, inside
+   `protected?/2`, needs `authorize?: false` added directly, in place of the
+   forwarded `opts` (the same "replace, don't forward" shape as
+   `deal_roles.ex:27`'s own fix under rule 4). Its sibling calls in the same
+   function are unaffected and keep forwarding `opts` unchanged: `Phase`
+   carries no policy at all (Out of scope), so `Games.get_phase`/
+   `Games.list_phases!`'s behavior does not depend on actor either way; and
+   `Games.get_player`, `Games.update_player` and `Games.update_action` are
+   the kill's own effect, correctly attributed to the werewolf who caused
+   it, not a read this rule governs.
+
+   **Conditional forced consequence, added 2026-09-13 per the qss.5 spec
+   review:** qss.5 (day-vote resolution; spec PR #9, not merged as of this
+   revision, and not a dependency of this bead in either direction) adds
+   `lib/werewolf_ash/games/reactors/resolve_lynch.ex`, which reads a day
+   phase's `:vote` `Action` rows with no actor to tally the lynch. `:vote`
+   gets no type-specific narrowing (above), but it still sits behind rule
+   8's own opening baseline — an actor must hold a seat in the row's game at
+   all — so a `nil` actor is filtered to `[]` exactly like every other
+   unauthenticated `Action` read in this spec, the same failure shape as
+   `check_win.ex`'s and `deal_roles.ex`'s reads (rule 4) and `apply_kill.ex`'s
+   (above): lynch resolution would silently count zero votes once `Action`
+   gains its authorizer, not just in a test. This spec cannot pin the exact
+   line or verify the fix is already in place — `resolve_lynch.ex` does not
+   exist on `main` as of this revision, so there is nothing here to grep.
+   Whichever of 27w.2 and qss.5 is implemented **second** must handle it,
+   the same "second bead reconciles" shape this spec already uses for
+   qss.14's `:update_settings` (NOTES): if `resolve_lynch.ex` already exists
+   when this bead is implemented, grep it for its vote-tallying read and add
+   `authorize?: false` there directly if it is missing; if this bead lands
+   first, qss.5's own spec and its coder are responsible for adding
+   `authorize?: false` to that read when `resolve_lynch.ex` is written,
+   citing this rule as the reason. Do not skip the grep on the assumption
+   that qss.5's spec already accounts for it — verify against the actual
+   file at whichever point it exists.
 9. `Action`'s `:update` action (`update_action`, which records a result)
    stays exactly as open as it is today (`authorize_if always()`) — not
    named by this bead.
@@ -383,10 +626,22 @@ its existing sign-in/current-user surface, a token-revocation test, and a
 - qss.14's owner-configurable game settings, and any restriction on
   `update_game`/`destroy_game` to the owner — left open per rule 2/
   Assumption 5.
-- qss.17's flip of `Player.role` visibility to everyone once a game reaches
-  `:finished`. This bead's field policy (rule 5) is written for an ongoing
-  game only; qss.17 depends on this bead and adds the `:finished` exception
-  itself.
+- qss.17's game-over role reveal is no longer out of scope: the owner folded
+  it into this bead on 2026-09-13 (qss.17's own NOTES record the decision),
+  and rule 5 now builds the `:finished` exception directly. What's still
+  qss.17's own, not built here: qss.17's `Done:` line also asks for "the
+  finished game's player list includes every role" as an end-to-end
+  behavior and "the flip is driven by state, not by time" — both already
+  fall out of rule 5's `expr(game.state == :finished)` condition with no
+  extra work, so nothing is missing, but qss.17 should still close itself
+  out against this bead rather than duplicate it. qss.17's description also
+  says "the game-over event (qss.11) carries the winner" — that event is
+  qss.11's, not this bead's, and nothing here changes because of it. See
+  `werewolf_ash-qss.19`'s bead NOTES for a related gap this rule does not
+  settle: qss.19's own dawn reveal of a dead player's role while a game is
+  still in progress cannot rely on this bead's ordinary `Player.role` read
+  policy, which stays closed until `:finished` (or the reader is dead
+  themselves) — qss.19 needs its own mechanism for that reveal.
 - GraphQL queries/mutations for any of this — that is 27w.3 (games) and
   27w.6 (chat), both of which depend on this bead.
 - Binding `Game.create`'s `owner_id`, or `Player.create`'s/`join`'s
@@ -394,8 +649,9 @@ its existing sign-in/current-user surface, a token-revocation test, and a
 - Any policy or field policy on `Phase`. Not named by the bead's description,
   and nothing here needs one (`AdvancePhase`'s internal phase
   creation/closing keeps working unauthorized either way).
-- Narrowing `:vote`/`:protect`/`:shoot` `Action` visibility, or extending
-  chat's "dead read everything" rule to `Action` — see Assumptions 4 and 6.
+- Narrowing `:vote`/`:shoot` `Action` visibility beyond the baseline —
+  `:protect` is narrowed by rule 8 (revised 2026-09-13, Assumption 4);
+  `:vote`/`:shoot` are not, and nothing about this revision changes that.
 - Restricting `update_player` or `update_action` to particular callers — see
   Assumption 5.
 - AshOban/scheduler wiring. `:end_day`/`:end_night` being system-only,
@@ -426,7 +682,17 @@ its existing sign-in/current-user surface, a token-revocation test, and a
   `Ash.read!` and asserting on the resulting value, or `Ash.can_see_fields?/3`):
   a player reads their own role; a werewolf reads a fellow werewolf's role; a
   villager reading a wolf's, the seer's, or another villager's role gets
-  `%Ash.ForbiddenField{}`, not `nil`.
+  `%Ash.ForbiddenField{}`, not `nil`; in a game whose `state` is `:finished`,
+  a villager reads a wolf's (or any other seat's) role; in the identical
+  setup with the game still `:day`/`:night`/`:lobby`, the same read still
+  comes back `%Ash.ForbiddenField{}` — the two tests must share every
+  condition but the game's `state`, so the assertion actually pins the
+  `:finished` check and not some other path to visibility (own seat, fellow
+  wolf); a dead villager reads a living wolf's role in an ongoing (not
+  `:finished`) game, paired with the same setup but the reading villager
+  still alive, which must still come back `%Ash.ForbiddenField{}` — again
+  sharing every condition but the reader's own `alive`, so the assertion
+  pins the "dead sees everything" check specifically.
 - `WerewolfAsh.Games.create_action/4,5,6` — direct tests: creating an
   `Action` with `actor_id` set to the caller's own player succeeds;
   set to any other player's id, or with no actor, is forbidden.
@@ -437,11 +703,33 @@ its existing sign-in/current-user surface, a token-revocation test, and a
   which qss.4's own rules decide whether the kill is valid. Without this, the
   unnamed `:kill` action would stay `authorize_if always()` under Assumption 5
   and anyone could submit a kill as any wolf.
+- **Conditional on qss.21 having landed a `:withdraw` action by
+  implementation time; otherwise irrelevant:**
+  `WerewolfAsh.Games.withdraw_action/3` — direct test: an actor who does not
+  hold the seat named by the `actor_id` argument is forbidden; the actor
+  holding that seat is authorized (qss.21's own rules then decide whether
+  the withdrawal itself is valid — e.g. voting closed, night already
+  started). If `:withdraw` does not exist at implementation time, this item
+  does not apply and is not something this bead's coder needs to write.
 - `WerewolfAsh.Games.list_actions/0,1`, `WerewolfAsh.Games.get_action/1,2` —
   direct tests: a `:kill` row is readable by a werewolf seat-holder and
   not by a non-wolf game member; an `:investigate` row is readable by the
   seer who cast it and not by any other game member (wolf included); a
-  `:vote` row is readable by any game member.
+  `:protect` row is readable by the bodyguard who cast it and not by any
+  other game member, a werewolf included (rule 8, revised 2026-09-13); a
+  `:vote` row is readable by any game member; a dead non-wolf, non-seer,
+  non-bodyguard game member reads a `:kill` row, an `:investigate` row cast
+  by the seer, and a `:protect` row cast by the bodyguard — three tests,
+  each paired against the identical setup with that same reader still
+  alive, which must still be forbidden, so each assertion pins the "dead
+  sees everything" exception specifically and not some other grant (rule 8,
+  added 2026-09-13).
+- `WerewolfAsh.Games.Action.Changes.ApplyKill.protected?/2`'s internal
+  `:protect` lookup gets no new acceptance item of its own: the existing
+  `apply_kill_test.exs` "a target protected that day survives and the kill
+  is spent" test (see "Existing tests this will break" below) is the pin
+  for rule 8's `authorize?: false` fix — it fails without the fix (the
+  target dies) and passes with it, no test rewrite needed.
 - `WerewolfAsh.Games.send_message/4,5,6`,
   `WerewolfAsh.Games.list_messages_visible_to/1,2,3` — direct tests: the bare
   `:read` action (`Ash.read!(Message, actor: ...)`) no longer returns
@@ -517,9 +805,12 @@ None of the fixes below touch the production modules being tested
 `AdvancePhase`, `Clock` — this last pair already uses `authorize?: false`
 throughout and needs nothing extra); they thread `authorize?: false` through
 call sites exercising a *different* contract than the new policies, exactly
-as `games_test.exs:27` already does for loading a `Game`'s `owner`. The one
+as `games_test.exs:27` already does for loading a `Game`'s `owner`. The
 genuine production fixes are `check_win.ex`'s read step and
-`deal_roles.ex`'s `list_players!` call, both per rule 4.
+`deal_roles.ex`'s `list_players!` call (both per rule 4), and
+`apply_kill.ex`'s `protected?/2` read (per rule 8) — plus, conditionally,
+`resolve_lynch.ex`'s vote read if that file exists by the time this bead is
+implemented (qss.5, unmerged as of this revision; see rule 8's own entry).
 
 - `test/support/generators.ex`'s `player/1`: the `after_action` hook
   (`Games.update_player!(player, %{role: role})`, added by qss.3 once
@@ -688,6 +979,25 @@ genuine production fixes are `check_win.ex`'s read step and
     carries no field policy, so rule 5 does not additionally apply here).
   - line 49, `Games.create_action!(day.id, bodyguard.id, target.id,
     :protect)` — needs `authorize?: false` (rule 7).
+  - Line 21's `stage/3` helper calls `ApplyKill.change/3` directly with
+    `context: %{}`, then invokes the returned `after_action` hook itself —
+    it never goes through the real `:kill` action, so `Context.to_opts(%{})`
+    (`Ash.Scope.to_opts/2`, `deps/ash/lib/ash/scope.ex:107-123`, its `Map`
+    impl at `deps/ash/lib/ash/scope.ex:189-203`) resolves to `[]`: no actor,
+    no `authorize?` key. Every read inside `protected?/2` therefore runs
+    with the domain's own `authorize: :by_default` default
+    (`deps/ash/lib/ash/actions/helpers.ex:394-395`, `Keyword.put_new(opts,
+    :authorize?, true)`) and `actor: nil`. This is a second, independent
+    reason (on top of rule 8's forced consequence above) that "a target
+    protected that day survives and the kill is spent" is the pin for the
+    `apply_kill.ex:43-59` fix, not just a nice-to-have: with `actor: nil`,
+    rule 8's own *baseline* already returns nothing for any `Action` read,
+    narrowed or not, so this test would fail on the unnarrowed baseline
+    too, before rule 8's `:protect`-specific narrowing is even reached. The
+    single `authorize?: false` fix specified under rule 8 covers both
+    reasons at once, since it stops this read from depending on `opts` (and
+    therefore on the actor) at all — no separate fix or test change is
+    needed here beyond the four calls already listed above.
   - The other four new qss.4 test files under `test/werewolf_ash/games/action/`
     (`actor_alive_test.exs`, `type_requires_phase_and_role_test.exs`,
     `shoot_requires_pending_hunter_test.exs`,
@@ -1015,9 +1325,29 @@ Advisory only.
 - `lib/werewolf_ash/games/game.ex` — `authorizers: [Ash.Policy.Authorizer]`,
   a `policies do` block for rules 1-3.
 - `lib/werewolf_ash/games/player.ex` — `authorizers: [...]`, `policies do`
-  for rules 4/6, `field_policies do` for rule 5.
+  for rules 4/6, `field_policies do` for rule 5, including the `:finished`
+  condition and the "dead sees everything" condition (both added
+  2026-09-13), each crossing the existing `belongs_to :game`/`has_many
+  :players` relationships.
 - `lib/werewolf_ash/games/action.ex` — `authorizers: [...]`, `policies do`
-  for rules 7-9.
+  for rules 7-9, including rule 8's `:protect`-narrowing condition and its
+  "dead sees everything" exception (both added/revised 2026-09-13)
+  alongside `:kill`/`:investigate`; and, conditionally, a `SimpleCheck`-based
+  policy on `:withdraw` (rule 7's own conditional extension) if that action
+  already exists when this bead is implemented (qss.21 landed first) — grep
+  for it, don't assume either way.
+- A new `Ash.Policy.SimpleCheck` module for `:withdraw`'s "only as yourself"
+  check (rule 7's conditional extension), conditional on the same thing —
+  qss.21's own spec names it there; this bead does not invent a second one.
+- `lib/werewolf_ash/games/action/changes/apply_kill.ex:43-59` —
+  `authorize?: false` on `protected?/2`'s `Games.list_actions!` call, in
+  place of the forwarded `opts` (rule 8's forced consequence of narrowing
+  `:protect`); its other calls in the same function are unchanged.
+- `lib/werewolf_ash/games/reactors/resolve_lynch.ex` — conditional, not a
+  file this bead creates: if it already exists when this bead is
+  implemented (qss.5 landed first), its vote-tallying read needs
+  `authorize?: false` too (rule 8's second forced consequence); grep for it
+  at that time, don't assume it's missing or already fixed.
 - `lib/werewolf_ash/games/message.ex` — `policies do` for rules 10-11 (needs
   `authorizers: [Ash.Policy.Authorizer]` added too; it isn't there yet).
 - `lib/werewolf_ash/games/reactors/check_win.ex` — `authorize?: false` on the
