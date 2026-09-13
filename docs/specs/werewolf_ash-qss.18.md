@@ -1,5 +1,7 @@
 # werewolf_ash-qss.18: Action target validity: target alive, and actor/target/phase in the same game
 
+Implemented in PR #17.
+
 Depends on: none
 
 ## For the owner
