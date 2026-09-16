@@ -71,5 +71,22 @@ defmodule WerewolfAsh.Games.Action.Changes.ApplyKillTest do
       assert updated.result == %{"killed" => true}
       assert Games.get_player!(target.id, authorize?: false).alive == false
     end
+
+    test "a target protected by a bodyguard who is dead by kill resolution dies unprotected (rule 10)" do
+      game = generate(game())
+      day = generate(phase(game_id: game.id, kind: :day, number: 1))
+      night = generate(phase(game_id: game.id, kind: :night, number: 2))
+      bodyguard = generate(player(game_id: game.id, role: :bodyguard))
+      werewolf = generate(player(game_id: game.id, role: :werewolf))
+      target = generate(player(game_id: game.id, role: :villager))
+
+      Games.create_action!(day.id, bodyguard.id, target.id, :protect, authorize?: false)
+      Games.update_player!(bodyguard, %{alive: false}, authorize?: false)
+
+      assert {:ok, updated} = stage(target, werewolf, night)
+
+      assert updated.result == %{"killed" => true}
+      assert Games.get_player!(target.id, authorize?: false).alive == false
+    end
   end
 end

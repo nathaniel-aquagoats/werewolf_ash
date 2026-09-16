@@ -6,11 +6,13 @@ defmodule WerewolfAsh.Games.Action.Changes.ApplyKill do
   Looks up the immediately preceding day phase of the same game (the
   `Phase` with the same `game_id`, `kind: :day`, and `number` exactly one
   less than the kill's own phase). If that phase holds a `:protect` action
-  naming the same target, the kill is spent: the action row still records
-  `result: %{"killed" => false}` and the target's `alive` is left alone.
-  Otherwise the target's `alive` is set to `false` and `result` is
-  `%{"killed" => true}`. A kill on a game's very first phase (`number: 1`)
-  has no preceding day phase to check, so it is never protected.
+  naming the same target *and* still-alive actor (rule 10 — a protection
+  set up by a bodyguard who has since died no longer shields anyone), the
+  kill is spent: the action row still records `result: %{"killed" =>
+  false}` and the target's `alive` is left alone. Otherwise the target's
+  `alive` is set to `false` and `result` is `%{"killed" => true}`. A kill
+  on a game's very first phase (`number: 1`) has no preceding day phase to
+  check, so it is never protected.
 
   Runs as an `after_action` hook, alongside `DealRoles`'s own hook that
   reads and writes a different resource than the one being created.
@@ -56,8 +58,19 @@ defmodule WerewolfAsh.Games.Action.Changes.ApplyKill do
           authorize?: false
         )
 
-      protects != []
+      # rule 10 - a target only counts as protected while at least one
+      # matching :protect row's own actor (the bodyguard) is still alive;
+      # rule 13 - `opts` here is the same `opts` this function's other calls
+      # already thread through, not a new `authorize?: false` of its own.
+      Enum.any?(protects, &protector_alive?(&1, opts))
     else
+      _ -> false
+    end
+  end
+
+  defp protector_alive?(%{actor_id: actor_id}, opts) do
+    case Games.get_player(actor_id, opts) do
+      {:ok, %{alive: true}} -> true
       _ -> false
     end
   end
