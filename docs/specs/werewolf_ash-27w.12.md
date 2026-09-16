@@ -1,5 +1,7 @@
 # werewolf_ash-27w.12: Send magic-link sign-in emails from an Oban job
 
+Implemented in PR #23.
+
 Depends on: none
 
 ## For the owner
