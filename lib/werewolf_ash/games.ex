@@ -47,6 +47,7 @@ defmodule WerewolfAsh.Games do
     resource WerewolfAsh.Games.Action do
       define :create_action, action: :create, args: [:phase_id, :actor_id, :target_id, :type]
       define :create_kill_action, action: :kill, args: [:phase_id, :actor_id, :target_id]
+      define :withdraw_action, action: :withdraw, args: [:phase_id, :actor_id, :type]
       define :update_action, action: :update
       define :get_action, action: :read, get_by: [:id]
       define :list_actions, action: :read

@@ -1080,12 +1080,16 @@ defmodule WerewolfAsh.GamesTest do
     end
 
     test "allows one action per actor, phase and type", ctx do
-      Games.create_action!(ctx.phase.id, ctx.alice.id, ctx.bob.id, :vote, authorize?: false)
+      first =
+        Games.create_action!(ctx.phase.id, ctx.alice.id, ctx.bob.id, :vote, authorize?: false)
 
-      assert {:error, %Ash.Error.Invalid{errors: [%{field: :phase_id}]}} =
-               Games.create_action(ctx.phase.id, ctx.alice.id, ctx.alice.id, :vote,
-                 authorize?: false
-               )
+      # werewolf_ash-qss.21 rule 1 - a second :vote for the same actor and
+      # phase recasts the existing row in place instead of being refused.
+      second =
+        Games.create_action!(ctx.phase.id, ctx.alice.id, ctx.alice.id, :vote, authorize?: false)
+
+      assert second.id == first.id
+      assert Games.get_action!(first.id, authorize?: false).target_id == ctx.alice.id
 
       # a different type in the same phase is fine
       Games.update_player!(ctx.alice, %{role: :bodyguard})

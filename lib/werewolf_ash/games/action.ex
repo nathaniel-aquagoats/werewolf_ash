@@ -5,9 +5,14 @@ defmodule WerewolfAsh.Games.Action do
   action is aimed at a `target` player.
 
   A player may hold at most one action of each `type` per phase (the
-  `one_per_actor_per_phase_per_type` identity): submitting the same type
-  again in the same phase is refused outright — no upsert, no replacing the
-  earlier choice — the actor has used up that action for the phase.
+  `one_per_actor_per_phase_per_type` identity). For `:vote` and `:protect`,
+  while the actor is alive and the phase is still open, submitting the
+  same type again recasts it in place — the same row, with the new
+  `target_id` — checked exactly as a first attempt would be;
+  `withdraw_action/3` deletes it outright, or does nothing if the actor
+  holds none. Every other type (`:kill`, `:investigate`, `:shoot`) stays
+  one-shot: a second attempt is refused outright, no upsert, no replacing
+  the earlier choice.
   """
 
   use Ash.Resource,
@@ -16,12 +21,16 @@ defmodule WerewolfAsh.Games.Action do
     data_layer: AshPostgres.DataLayer,
     authorizers: [Ash.Policy.Authorizer]
 
+  alias WerewolfAsh.Games.Action.Actions.Withdraw
   alias WerewolfAsh.Games.Action.Changes.ApplyKill
   alias WerewolfAsh.Games.Action.Changes.RecordInvestigationResult
   alias WerewolfAsh.Games.Action.Changes.ResolveKillWin
+  alias WerewolfAsh.Games.Action.Changes.UpsertChangeableTypes
+  alias WerewolfAsh.Games.Action.Checks.WithdrawNamesOwnSeat
   alias WerewolfAsh.Games.Action.Validations.ActorAlive
   alias WerewolfAsh.Games.Action.Validations.ActorAndTargetInGame
   alias WerewolfAsh.Games.Action.Validations.NoConsecutiveProtect
+  alias WerewolfAsh.Games.Action.Validations.PhaseNotEnded
   alias WerewolfAsh.Games.Action.Validations.ShootRequiresPendingHunter
   alias WerewolfAsh.Games.Action.Validations.TargetAlive
   alias WerewolfAsh.Games.Action.Validations.TypeRequiresPhaseAndRole
@@ -83,6 +92,15 @@ defmodule WerewolfAsh.Games.Action do
       # rule 7 - a shot requires the actor to be the game's pending hunter.
       validate ShootRequiresPendingHunter, where: [attribute_equals(:type, :shoot)]
 
+      # rule 4 - a :vote/:protect (first attempt or recast) is rejected once
+      # the phase it names has already ended.
+      validate PhaseNotEnded, where: [one_of(:type, [:vote, :protect])]
+
+      # rules 1, 2, 5 - marks a :vote/:protect changeset to upsert in place
+      # on a recast; every other type is left unmarked and so stays
+      # one-shot.
+      change UpsertChangeableTypes
+
       # rule 8 - the seer's answer is computed the instant the row is created.
       change RecordInvestigationResult
     end
@@ -115,6 +133,26 @@ defmodule WerewolfAsh.Games.Action do
       primary? true
       accept [:result]
     end
+
+    action :withdraw do
+      description "Deletes the actor's own :vote or :protect for a phase (rules 6-9)."
+
+      argument :phase_id, :uuid, allow_nil?: false
+      argument :actor_id, :uuid, allow_nil?: false
+      argument :type, WerewolfAsh.Games.Action.Type, allow_nil?: false
+
+      # rule 6 - only :vote/:protect are withdrawable; any other type is
+      # rejected on :type.
+      validate one_of(:type, [:vote, :protect])
+
+      # rule 7 - the actor must currently be alive.
+      validate ActorAlive
+
+      # rule 8 - the named phase must not have already ended.
+      validate PhaseNotEnded
+
+      run Withdraw
+    end
   end
 
   policies do
@@ -146,6 +184,13 @@ defmodule WerewolfAsh.Games.Action do
                              (type == :investigate and actor.user_id == ^actor(:id)) or
                              (type == :protect and actor.user_id == ^actor(:id))))
                    )
+    end
+
+    # rule 11 - :withdraw's actor_id argument must name the caller's own
+    # seat, the same outcome rule 7 gives :create/:kill, checked against the
+    # in-flight action_input instead since :withdraw has no row of its own.
+    policy action(:withdraw) do
+      authorize_if WithdrawNamesOwnSeat
     end
 
     # rule 9 - :update (which records a result) stays exactly as open as it

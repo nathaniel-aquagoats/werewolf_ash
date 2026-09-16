@@ -1,5 +1,7 @@
 # werewolf_ash-qss.21: Changeable day choices: change or withdraw a vote or protection while alive
 
+Implemented in PR #24.
+
 Depends on: werewolf_ash-qss.18
 
 ## For the owner
