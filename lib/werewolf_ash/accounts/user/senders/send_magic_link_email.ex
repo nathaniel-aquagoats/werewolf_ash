@@ -1,15 +1,25 @@
 defmodule WerewolfAsh.Accounts.User.Senders.SendMagicLinkEmail do
   @moduledoc """
-  Sends a magic-link sign-in token by email, via `WerewolfAsh.Mailer`.
+  Requests a magic-link sign-in token be emailed, by enqueueing a background
+  job that delivers it via `WerewolfAsh.Mailer`.
 
-  A `Swoosh.Email` is built and handed to `WerewolfAsh.Mailer.deliver/1` in
-  every environment; delivery is never a bare `IO.puts`/`Logger` call
-  standing in for it. Which adapter actually backs the mailer differs per
-  environment (see `config/*.exs`): a real, network-based adapter (Resend) in
-  `:prod`, a non-network one (`Swoosh.Adapters.Test`) in `:dev`/`:test` — so
-  neither `mix phx.server` nor `mix test` ever makes a real network call or
-  needs a provider credential. `:dev` and `:test` also still print the token
-  and deep link to the console, purely for local convenience.
+  `send/3` itself never touches the mailer: it hands delivery off to
+  `WerewolfAsh.Accounts.User.Senders.SendMagicLinkEmailWorker`, an Oban job on
+  its own `:emails` queue, enqueued synchronously (never from a spawned
+  process or `Task`) as part of `request_magic_link`'s own transaction — so
+  the job only becomes visible once that transaction commits. This is
+  intentional per CLAUDE.md's Oban conventions: sending an email is
+  background work, not something the request needs to wait on.
+
+  Only one such job is ever unfinished per address at a time (case-
+  insensitively): a further request while one is still queued, scheduled,
+  executing or retrying enqueues no second job, so mashing "resend" doesn't
+  pile up duplicate emails. See the worker's own moduledoc for the delivery
+  and retry behaviour.
+
+  `:dev` and `:test` also still print the token and deep link to the
+  console, purely for local convenience, synchronously and regardless of
+  what happens to the enqueued job.
 
   Tests capture the token without touching the console: register a pid with
   `Application.put_env(:werewolf_ash, :magic_link_test_pid, self())` and this
@@ -25,10 +35,7 @@ defmodule WerewolfAsh.Accounts.User.Senders.SendMagicLinkEmail do
 
   use AshAuthentication.Sender
 
-  require Logger
-
-  alias Swoosh.Email
-  alias WerewolfAsh.Mailer
+  alias WerewolfAsh.Accounts.User.Senders.SendMagicLinkEmailWorker
 
   @test_hook? Application.compile_env(:werewolf_ash, :magic_link_test_hook?, false)
 
@@ -50,7 +57,7 @@ defmodule WerewolfAsh.Accounts.User.Senders.SendMagicLinkEmail do
     #{link}
     """)
 
-    deliver(email, link)
+    enqueue_delivery(email, token)
     maybe_forward_to_test_pid(email, token)
 
     :ok
@@ -65,24 +72,15 @@ defmodule WerewolfAsh.Accounts.User.Senders.SendMagicLinkEmail do
     "#{base_url}?token=#{token}"
   end
 
-  defp deliver(email, link) do
-    from = Application.fetch_env!(:werewolf_ash, :magic_link_from_address)
-
-    message =
-      Email.new()
-      |> Email.to(email)
-      |> Email.from(from)
-      |> Email.subject("Your Werewolf sign-in link")
-      |> Email.text_body("Click this link to sign in:\n\n#{link}")
-
-    case Mailer.deliver(message) do
-      {:ok, _receipt} ->
-        :ok
-
-      {:error, reason} ->
-        Logger.error("Failed to send magic-link email to #{email}: #{inspect(reason)}")
-        :ok
-    end
+  # The job's args are the minimum needed to send later, plus a lowercased
+  # copy of the address to dedupe on (rule 11): `email`/`token` as typed and
+  # looked up may differ in casing between the two call sites in
+  # `AshAuthentication.Strategy.MagicLink.Request.run/3`, but the dedupe key
+  # is always normalized so `Foo@Example.com` and `foo@example.com` collide.
+  defp enqueue_delivery(email, token) do
+    %{"email" => email, "token" => token, "dedupe_key" => String.downcase(email)}
+    |> SendMagicLinkEmailWorker.new()
+    |> Oban.insert()
   end
 
   if @test_hook? do

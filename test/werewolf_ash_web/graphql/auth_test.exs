@@ -1,15 +1,3 @@
-defmodule WerewolfAshWeb.Graphql.AuthTest.FailingMailerAdapter do
-  @moduledoc """
-  A `Swoosh.Adapter` that always fails delivery, for exercising
-  `SendMagicLinkEmail.send/3`'s failed-delivery path (Rule 8) without a real
-  provider.
-  """
-
-  use Swoosh.Adapter
-
-  def deliver(_email, _config), do: {:error, :boom}
-end
-
 defmodule WerewolfAshWeb.Graphql.AuthTest do
   @moduledoc """
   Exercises the magic-link auth flow end to end through the GraphQL layer
@@ -20,18 +8,19 @@ defmodule WerewolfAshWeb.Graphql.AuthTest do
   use WerewolfAshWeb.ConnCase, async: false
 
   import ExUnit.CaptureIO
-  import ExUnit.CaptureLog
   import Swoosh.TestAssertions
   # `connect/2,3` clash between the HTTP verb helper and the socket helper
   import Phoenix.ConnTest, except: [connect: 2, connect: 3]
   import Phoenix.ChannelTest, only: [connect: 2, connect: 3]
 
   alias AshAuthentication.TokenResource
+  alias Ecto.Changeset
   alias WerewolfAsh.Accounts.BearerToken
   alias WerewolfAsh.Accounts.Token
   alias WerewolfAsh.Accounts.User
   alias WerewolfAsh.Accounts.User.Senders.SendMagicLinkEmail
-  alias WerewolfAshWeb.Graphql.AuthTest.FailingMailerAdapter
+  alias WerewolfAsh.Accounts.User.Senders.SendMagicLinkEmailWorker
+  alias WerewolfAsh.Repo
 
   @request_magic_link """
   mutation RequestMagicLink($email: String!) {
@@ -271,6 +260,12 @@ defmodule WerewolfAshWeb.Graphql.AuthTest do
     test "delivers the email to the resolved recipient with the deep link, not the removed web path" do
       capture_io(fn -> SendMagicLinkEmail.send("deliver@example.com", "deliver-token", []) end)
 
+      assert :ok =
+               perform_job(SendMagicLinkEmailWorker, %{
+                 "email" => "deliver@example.com",
+                 "token" => "deliver-token"
+               })
+
       assert_email_sent(fn email ->
         email.to == [{"", "deliver@example.com"}] and
           String.contains?(email.text_body, "deliver-token") and
@@ -288,6 +283,12 @@ defmodule WerewolfAshWeb.Graphql.AuthTest do
 
       capture_io(fn -> SendMagicLinkEmail.send("override@example.com", "override-token", []) end)
 
+      assert :ok =
+               perform_job(SendMagicLinkEmailWorker, %{
+                 "email" => "override@example.com",
+                 "token" => "override-token"
+               })
+
       assert_email_sent(fn email ->
         String.contains?(email.text_body, "sentinel://base?token=override-token")
       end)
@@ -303,6 +304,12 @@ defmodule WerewolfAshWeb.Graphql.AuthTest do
 
       capture_io(fn -> SendMagicLinkEmail.send("from-test@example.com", "from-token", []) end)
 
+      assert :ok =
+               perform_job(SendMagicLinkEmailWorker, %{
+                 "email" => "from-test@example.com",
+                 "token" => "from-token"
+               })
+
       assert_email_sent(fn email -> email.from == {"", "sentinel@example.com"} end)
     end
 
@@ -315,22 +322,62 @@ defmodule WerewolfAshWeb.Graphql.AuthTest do
       refute output =~ "/auth/user/magic_link"
     end
 
-    test "a failed delivery still returns :ok and logs an error" do
-      original = Application.fetch_env!(:werewolf_ash, WerewolfAsh.Mailer)
-      Application.put_env(:werewolf_ash, WerewolfAsh.Mailer, adapter: FailingMailerAdapter)
+    test "enqueues exactly one job on the emails queue, carrying the address, token, and dedupe key (rules 2, 3, 6, 11)" do
+      capture_io(fn -> SendMagicLinkEmail.send("queued@example.com", "queued-token", []) end)
 
-      on_exit(fn ->
-        Application.put_env(:werewolf_ash, WerewolfAsh.Mailer, original)
-      end)
+      assert [%Oban.Job{queue: "emails", args: args}] =
+               all_enqueued(
+                 worker: SendMagicLinkEmailWorker,
+                 args: %{"email" => "queued@example.com"}
+               )
 
-      log =
-        capture_log(fn ->
-          capture_io(fn ->
-            assert :ok = SendMagicLinkEmail.send("fail@example.com", "fail-token", [])
-          end)
-        end)
+      assert args == %{
+               "email" => "queued@example.com",
+               "token" => "queued-token",
+               "dedupe_key" => "queued@example.com"
+             }
+    end
 
-      assert log =~ "[error]"
+    test "a second call for the same still-unfinished address enqueues no second job, even long after the first (rule 6)" do
+      email = "dedupe@example.com"
+      capture_io(fn -> SendMagicLinkEmail.send(email, "first-token", []) end)
+
+      [job] = all_enqueued(worker: SendMagicLinkEmailWorker, args: %{"dedupe_key" => email})
+
+      long_ago = DateTime.add(DateTime.utc_now(), -120, :second)
+      job |> Changeset.change(inserted_at: long_ago) |> Repo.update!()
+
+      capture_io(fn -> SendMagicLinkEmail.send(email, "second-token", []) end)
+
+      assert [%{args: %{"token" => "first-token"}}] =
+               all_enqueued(worker: SendMagicLinkEmailWorker, args: %{"dedupe_key" => email})
+    end
+
+    test "requests for differently-cased addresses collide on the same lowercased dedupe key (rule 6)" do
+      capture_io(fn -> SendMagicLinkEmail.send("Foo@Example.com", "mixed-case-token", []) end)
+      capture_io(fn -> SendMagicLinkEmail.send("foo@example.com", "lower-case-token", []) end)
+
+      assert [%{args: %{"token" => "mixed-case-token"}}] =
+               all_enqueued(
+                 worker: SendMagicLinkEmailWorker,
+                 args: %{"dedupe_key" => "foo@example.com"}
+               )
+    end
+
+    test "once the earlier job has actually finished, a further call enqueues a fresh one (rule 7)" do
+      email = "finished@example.com"
+      capture_io(fn -> SendMagicLinkEmail.send(email, "first-token", []) end)
+
+      # `all_enqueued/1` only reports unfinished jobs (available, scheduled,
+      # suspended), so once the first job has actually finished it no longer
+      # blocks - or shows up alongside - a fresh one.
+      assert %{success: 1, failure: 0} = Oban.drain_queue(queue: :emails)
+      assert [] = all_enqueued(worker: SendMagicLinkEmailWorker, args: %{"dedupe_key" => email})
+
+      capture_io(fn -> SendMagicLinkEmail.send(email, "second-token", []) end)
+
+      assert [%{args: %{"token" => "second-token"}}] =
+               all_enqueued(worker: SendMagicLinkEmailWorker, args: %{"dedupe_key" => email})
     end
   end
 

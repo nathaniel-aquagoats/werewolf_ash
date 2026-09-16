@@ -9,7 +9,7 @@ config :ash_oban, pro?: false
 config :werewolf_ash, Oban,
   engine: Oban.Engines.Basic,
   notifier: Oban.Notifiers.Postgres,
-  queues: [default: 10],
+  queues: [default: 10, emails: 10],
   lifeline: [rescue_after: {2, :hours}],
   pruner: [max_age: {1, :day}],
   repo: WerewolfAsh.Repo,
