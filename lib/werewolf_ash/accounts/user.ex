@@ -153,6 +153,12 @@ defmodule WerewolfAsh.Accounts.User do
       response can never be used to enumerate accounts.
       """
 
+      # Runs inside a database transaction so the sender's `send/3` - called
+      # synchronously by `Request.run/3` below - enqueues its background
+      # email job (see `SendMagicLinkEmail`) as part of this same
+      # transaction: the job only becomes visible once this action commits.
+      transaction? true
+
       argument :email, :ci_string do
         allow_nil? false
       end

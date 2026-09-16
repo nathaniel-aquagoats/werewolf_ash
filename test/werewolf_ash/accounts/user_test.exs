@@ -7,11 +7,15 @@ defmodule WerewolfAsh.Accounts.UserTest do
 
   use WerewolfAsh.DataCase, async: true
 
+  import ExUnit.CaptureIO
   import WerewolfAsh.Generators
 
+  alias Ash.ActionInput
   alias Ash.Query
+  alias Ash.Resource.Info
   alias WerewolfAsh.Accounts
   alias WerewolfAsh.Accounts.User
+  alias WerewolfAsh.Accounts.User.Senders.SendMagicLinkEmailWorker
   alias WerewolfAsh.Games
 
   describe "set_name/2,3 (the attribute and action)" do
@@ -81,6 +85,26 @@ defmodule WerewolfAsh.Accounts.UserTest do
 
       assert Ash.read!(User, actor: stranger) == []
       assert {:error, %Ash.Error.Invalid{}} = Ash.get(User, target.id, actor: stranger)
+    end
+  end
+
+  describe "request_magic_link (rules 1, 2)" do
+    test "runs inside a database transaction" do
+      assert Info.action(User, :request_magic_link).transaction? == true
+    end
+
+    test "enqueues exactly one email job synchronously, as part of the action" do
+      email = "action-#{System.unique_integer([:positive])}@example.com"
+
+      input = ActionInput.for_action(User, :request_magic_link, %{email: email})
+
+      capture_io(fn -> assert {:ok, true} = Ash.run_action(input) end)
+
+      assert_enqueued(
+        worker: SendMagicLinkEmailWorker,
+        queue: :emails,
+        args: %{"email" => email, "dedupe_key" => String.downcase(email)}
+      )
     end
   end
 

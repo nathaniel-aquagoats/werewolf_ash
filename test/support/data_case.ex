@@ -20,6 +20,8 @@ defmodule WerewolfAsh.DataCase do
 
   using do
     quote do
+      use Oban.Testing, repo: WerewolfAsh.Repo
+
       alias WerewolfAsh.Repo
 
       import Ecto

@@ -22,6 +22,8 @@ defmodule WerewolfAshWeb.ConnCase do
 
   using do
     quote do
+      use Oban.Testing, repo: WerewolfAsh.Repo
+
       # The default endpoint for testing
       @endpoint WerewolfAshWeb.Endpoint
 
