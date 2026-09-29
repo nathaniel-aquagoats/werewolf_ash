@@ -4,13 +4,22 @@ defmodule WerewolfAsh.GamesTest do
   import WerewolfAsh.Generators
 
   alias Ash.Changeset
+  alias Ash.Resource.Info
   alias AshStateMachine.Errors.NoMatchingTransition
   alias WerewolfAsh.Games
+  alias WerewolfAsh.Games.Phase
+  alias WerewolfAsh.Games.Reactors.ResolveLynch
 
   # A stand-in actor is enough for ActorIsOwner, which only compares `id`.
   defp update_settings!(game, params) do
     Games.update_game_settings!(game, params, actor: %{id: game.owner_id})
   end
+
+  # werewolf_ash-27w.2 rule 8's authorization keys off the user, not the seat.
+  defp actor_for(player), do: %{id: player.user_id}
+
+  defp vote!(phase, actor, target),
+    do: Games.create_action!(phase.id, actor.id, target.id, :vote, authorize?: false)
 
   describe "games" do
     test "creates a game with players through the code interface" do
@@ -1120,6 +1129,201 @@ defmodule WerewolfAsh.GamesTest do
       Ash.destroy!(ctx.phase)
 
       assert {:error, %Ash.Error.Invalid{}} = Games.get_action(action.id)
+    end
+  end
+
+  describe "vote tally (werewolf_ash-qss.16)" do
+    test "declares :vote_tally as a public calculation (rule 8)" do
+      assert %Ash.Resource.Calculation{name: :vote_tally} =
+               Info.public_calculation(Phase, :vote_tally)
+    end
+
+    test "a living game member sees only counting entries; a dead member sees every currently cast vote, correctly marked (rules 4, 9, 10)" do
+      game = generate(game())
+      day = generate(phase(game_id: game.id, kind: :day, number: 1))
+      living_reader = generate(player(game_id: game.id, role: :villager))
+      dead_reader = generate(player(game_id: game.id, role: :villager))
+      voter_ok = generate(player(game_id: game.id, role: :villager))
+      voter_bad = generate(player(game_id: game.id, role: :villager))
+      voter_bad2 = generate(player(game_id: game.id, role: :villager))
+      target_ok = generate(player(game_id: game.id, role: :villager))
+      target_bad_only = generate(player(game_id: game.id, role: :villager))
+
+      vote!(day, voter_ok, target_ok)
+      vote!(day, voter_bad, target_ok)
+      vote!(day, voter_bad2, target_bad_only)
+
+      Games.update_player!(voter_bad, %{alive: false})
+      Games.update_player!(voter_bad2, %{alive: false})
+      Games.update_player!(dead_reader, %{alive: false})
+
+      living_view =
+        Games.get_phase!(day.id, load: :vote_tally, actor: actor_for(living_reader)).vote_tally
+
+      assert Map.keys(living_view) == [target_ok.id]
+
+      assert MapSet.new(living_view[target_ok.id]) ==
+               MapSet.new([%{voter_id: voter_ok.id, counts: true}])
+
+      refute Map.has_key?(living_view, target_bad_only.id)
+
+      dead_view =
+        Games.get_phase!(day.id, load: :vote_tally, actor: actor_for(dead_reader)).vote_tally
+
+      assert MapSet.new(dead_view[target_ok.id]) ==
+               MapSet.new([
+                 %{voter_id: voter_ok.id, counts: true},
+                 %{voter_id: voter_bad.id, counts: false}
+               ])
+
+      assert MapSet.new(dead_view[target_bad_only.id]) ==
+               MapSet.new([%{voter_id: voter_bad2.id, counts: false}])
+    end
+
+    test "a vote cast by a player who has since died is absent from a different living reader, but present marked counts: false for that voter's own read (rule 6)" do
+      game = generate(game())
+      day = generate(phase(game_id: game.id, kind: :day, number: 1))
+      voter = generate(player(game_id: game.id, role: :villager))
+      target = generate(player(game_id: game.id, role: :villager))
+      other_living = generate(player(game_id: game.id, role: :villager))
+
+      vote!(day, voter, target)
+      Games.update_player!(voter, %{alive: false})
+
+      other_view =
+        Games.get_phase!(day.id, load: :vote_tally, actor: actor_for(other_living)).vote_tally
+
+      refute Map.has_key?(other_view, target.id)
+
+      own_view = Games.get_phase!(day.id, load: :vote_tally, actor: actor_for(voter)).vote_tally
+      assert Map.keys(own_view) == [target.id]
+
+      assert MapSet.new(own_view[target.id]) ==
+               MapSet.new([%{voter_id: voter.id, counts: false}])
+    end
+
+    test "a vote naming a since-dead target is absent for a different living reader, present for a dead reader, and present marked counts: false for the still-living voter themselves (rule 4's own-vote exception)" do
+      game = generate(game())
+      day = generate(phase(game_id: game.id, kind: :day, number: 1))
+      voter = generate(player(game_id: game.id, role: :villager))
+      target = generate(player(game_id: game.id, role: :villager))
+      other_living = generate(player(game_id: game.id, role: :villager))
+      dead_reader = generate(player(game_id: game.id, role: :villager))
+
+      vote!(day, voter, target)
+      Games.update_player!(target, %{alive: false})
+      Games.update_player!(dead_reader, %{alive: false})
+
+      other_view =
+        Games.get_phase!(day.id, load: :vote_tally, actor: actor_for(other_living)).vote_tally
+
+      refute Map.has_key?(other_view, target.id)
+
+      dead_view =
+        Games.get_phase!(day.id, load: :vote_tally, actor: actor_for(dead_reader)).vote_tally
+
+      assert Map.keys(dead_view) == [target.id]
+
+      assert MapSet.new(dead_view[target.id]) ==
+               MapSet.new([%{voter_id: voter.id, counts: false}])
+
+      own_view = Games.get_phase!(day.id, load: :vote_tally, actor: actor_for(voter)).vote_tally
+      assert Map.keys(own_view) == [target.id]
+
+      assert MapSet.new(own_view[target.id]) ==
+               MapSet.new([%{voter_id: voter.id, counts: false}])
+    end
+
+    test "an actor with no seat, and no actor at all, both return %{} (rule 5)" do
+      game = generate(game())
+      day = generate(phase(game_id: game.id, kind: :day, number: 1))
+      voter = generate(player(game_id: game.id, role: :villager))
+      target = generate(player(game_id: game.id, role: :villager))
+      outsider = generate(user())
+
+      vote!(day, voter, target)
+
+      assert Games.get_phase!(day.id, load: :vote_tally, actor: %{id: outsider.id}).vote_tally ==
+               %{}
+
+      assert Games.get_phase!(day.id, load: :vote_tally).vote_tally == %{}
+    end
+
+    test "a still-living voter whose chosen target is also alive finds their own counting entry (rule 6)" do
+      game = generate(game())
+      day = generate(phase(game_id: game.id, kind: :day, number: 1))
+      voter = generate(player(game_id: game.id, role: :villager))
+      target = generate(player(game_id: game.id, role: :villager))
+
+      vote!(day, voter, target)
+
+      view = Games.get_phase!(day.id, load: :vote_tally, actor: actor_for(voter)).vote_tally
+      assert Map.keys(view) == [target.id]
+      assert MapSet.new(view[target.id]) == MapSet.new([%{voter_id: voter.id, counts: true}])
+    end
+
+    test "reading :vote_tally on the current night phase seeded with a :kill row returns %{} for a living and a dead reader alike (rules 2, 3)" do
+      game = generate(game())
+      night = generate(phase(game_id: game.id, kind: :night, number: 1))
+      wolf = generate(player(game_id: game.id, role: :werewolf))
+      victim = generate(player(game_id: game.id, role: :villager))
+      living_reader = generate(player(game_id: game.id, role: :villager))
+      dead_reader = generate(player(game_id: game.id, role: :villager))
+
+      Games.create_kill_action!(night.id, wolf.id, victim.id, authorize?: false)
+      Games.update_player!(dead_reader, %{alive: false})
+
+      assert Games.get_phase!(night.id, load: :vote_tally, actor: actor_for(living_reader)).vote_tally ==
+               %{}
+
+      assert Games.get_phase!(night.id, load: :vote_tally, actor: actor_for(dead_reader)).vote_tally ==
+               %{}
+    end
+
+    test "end to end: a living member's counting subset matches ResolveLynch.tally/1 exactly, and a dead member sees the full, correctly-marked picture once someone has died (rule 1, 9)" do
+      game = generate(game())
+      day = generate(phase(game_id: game.id, kind: :day, number: 1))
+      voter1 = generate(player(game_id: game.id, role: :villager))
+      voter2 = generate(player(game_id: game.id, role: :villager))
+      voter3 = generate(player(game_id: game.id, role: :villager))
+      target_a = generate(player(game_id: game.id, role: :villager))
+      target_b = generate(player(game_id: game.id, role: :villager))
+      dead_reader = generate(player(game_id: game.id, role: :villager))
+
+      vote!(day, voter1, target_a)
+      vote!(day, voter2, target_a)
+      vote!(day, voter3, target_b)
+
+      living_view =
+        Games.get_phase!(day.id, load: :vote_tally, actor: actor_for(voter1)).vote_tally
+
+      reduced =
+        Map.new(living_view, fn {target_id, entries} ->
+          {target_id,
+           entries |> Enum.filter(& &1.counts) |> Enum.map(& &1.voter_id) |> Enum.sort()}
+        end)
+
+      expected_tally =
+        Games.list_actions!(query: [filter: [phase_id: day.id, type: :vote]], authorize?: false)
+        |> ResolveLynch.tally()
+        |> Map.new(fn {target_id, voter_ids} -> {target_id, Enum.sort(voter_ids)} end)
+
+      assert reduced == expected_tally
+
+      Games.update_player!(voter1, %{alive: false})
+      Games.update_player!(dead_reader, %{alive: false})
+
+      dead_view =
+        Games.get_phase!(day.id, load: :vote_tally, actor: actor_for(dead_reader)).vote_tally
+
+      assert MapSet.new(dead_view[target_a.id]) ==
+               MapSet.new([
+                 %{voter_id: voter1.id, counts: false},
+                 %{voter_id: voter2.id, counts: true}
+               ])
+
+      assert MapSet.new(dead_view[target_b.id]) ==
+               MapSet.new([%{voter_id: voter3.id, counts: true}])
     end
   end
 end

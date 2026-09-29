@@ -1,5 +1,7 @@
 # werewolf_ash-qss.16: Vote visibility: who sees the day tally and when
 
+Implemented in PR #25.
+
 Depends on: werewolf_ash-qss.5, werewolf_ash-27w.2
 
 ## For the owner

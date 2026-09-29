@@ -9,6 +9,8 @@ defmodule WerewolfAsh.Games.Phase do
     domain: WerewolfAsh.Games,
     data_layer: AshPostgres.DataLayer
 
+  alias WerewolfAsh.Games.Phase.Calculations.VoteTally
+
   postgres do
     table "phases"
     repo WerewolfAsh.Repo
@@ -72,6 +74,15 @@ defmodule WerewolfAsh.Games.Phase do
     end
 
     has_many :actions, WerewolfAsh.Games.Action do
+      public? true
+    end
+  end
+
+  calculations do
+    # werewolf_ash-qss.16 rule 1 - one entry per :vote-type Action row of the
+    # phase, narrowed per rule 10 by the reading actor's own aliveness; see
+    # VoteTally's moduledoc for the settled open-ballot decision.
+    calculate :vote_tally, :map, {VoteTally, []} do
       public? true
     end
   end
