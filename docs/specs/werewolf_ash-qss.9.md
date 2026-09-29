@@ -1,5 +1,7 @@
 # werewolf_ash-qss.9: AshOban scheduler for phase ends and hunter deadline
 
+Implemented in PR #32.
+
 Depends on: none
 
 ## For the owner
