@@ -24,6 +24,7 @@ defmodule WerewolfAsh.Games do
       define :start_game, action: :start
       define :end_day, action: :end_day
       define :end_night, action: :end_night
+      define :resolve_hunter_deadline, action: :resolve_hunter_deadline
     end
 
     resource WerewolfAsh.Games.Player do

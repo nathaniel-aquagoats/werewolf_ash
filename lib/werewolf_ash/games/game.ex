@@ -6,11 +6,13 @@ defmodule WerewolfAsh.Games.Game do
   and `day_end` are local times of day. `phase_ends_at` is the UTC instant at
   which the current phase is due to end.
 
-  `state` is an `AshStateMachine`: `lobby -> (day | night) -> night -> day ...`.
-  Moving between phases only ever happens through the explicit `start`,
-  `end_day` and `end_night` actions, each of which takes a `now` argument so
-  the rules can be exercised without a clock. `hunter_pending` and `finished`
-  are declared now and reached by later issues.
+  `state` is an `AshStateMachine`: `lobby -> (day | night) -> night -> day ...`,
+  ending at `finished`. Moving between phases only ever happens through the
+  explicit `start`, `end_day` and `end_night` actions, each of which takes a
+  `now` argument so the rules can be exercised without a clock. An open
+  hunter window is `pending_hunter_id` plus `hunter_deadline_at`, a pointer
+  on the game rather than a state (werewolf_ash-qss.7): the day or night in
+  progress is untouched while it is open.
   """
 
   use Ash.Resource,
@@ -22,7 +24,10 @@ defmodule WerewolfAsh.Games.Game do
 
   alias WerewolfAsh.Games.Game.Changes.AdvancePhase
   alias WerewolfAsh.Games.Game.Changes.DealRoles
+  alias WerewolfAsh.Games.Game.Changes.OpenHunterWindowAtDawn
+  alias WerewolfAsh.Games.Game.Changes.OpenHunterWindowOnLynch
   alias WerewolfAsh.Games.Game.Changes.ResolveDayVote
+  alias WerewolfAsh.Games.Game.Changes.ResolveHunterDeadline
   alias WerewolfAsh.Games.Game.Changes.ResolveNightWin
   alias WerewolfAsh.Games.Game.Changes.SeatOwner
   alias WerewolfAsh.Games.Game.Validations.ActorIsOwner
@@ -35,7 +40,7 @@ defmodule WerewolfAsh.Games.Game do
   alias WerewolfAsh.Games.Game.Validations.PositivePlayerBounds
   alias WerewolfAsh.Games.Game.Validations.RoleCompositionFits
 
-  @states [:lobby, :day, :night, :hunter_pending, :finished]
+  @states [:lobby, :day, :night, :finished]
 
   postgres do
     table "games"
@@ -45,13 +50,13 @@ defmodule WerewolfAsh.Games.Game do
   state_machine do
     initial_states [:lobby]
     default_initial_state :lobby
-    extra_states [:hunter_pending, :finished]
+    extra_states [:finished]
 
     transitions do
       transition :start, from: :lobby, to: [:day, :night]
       transition :end_day, from: :day, to: :night
       transition :end_night, from: :night, to: :day
-      transition :finish, from: [:day, :night, :hunter_pending], to: :finished
+      transition :finish, from: [:day, :night], to: :finished
     end
   end
 
@@ -135,6 +140,12 @@ defmodule WerewolfAsh.Games.Game do
 
       change {AdvancePhase, to: :night}
       change ResolveDayVote
+
+      # rules 3-5, 9 - opens the hunter's one-hour window at once when this
+      # lynch itself killed the game's dealt hunter and the dusk win check
+      # left the game running; registered after ResolveDayVote so it sees
+      # the lynch and the win check both already resolved.
+      change OpenHunterWindowOnLynch
     end
 
     update :end_night do
@@ -152,6 +163,12 @@ defmodule WerewolfAsh.Games.Game do
       # werewolf_ash-qss.6 rules 9-11 - dawn's own win check, one more time,
       # before opening the new day.
       change ResolveNightWin
+
+      # rules 7-9 - opens the hunter's one-hour window at dawn when the
+      # wolves' kill (not a lynch) is what killed the dealt hunter;
+      # registered after ResolveNightWin so it sees the dawn win check's own
+      # verdict.
+      change OpenHunterWindowAtDawn
     end
 
     update :finish do
@@ -159,7 +176,31 @@ defmodule WerewolfAsh.Games.Game do
       accept []
       argument :winner, WerewolfAsh.Games.Game.Winner, allow_nil?: false
       change set_attribute(:winner, arg(:winner))
+
+      # rule 19 - a window cannot outlive the game, whichever route finished it.
+      change set_attribute(:pending_hunter_id, nil)
+      change set_attribute(:hunter_deadline_at, nil)
       change transition_state(:finished)
+    end
+
+    # The deadline is read against the window rather than any phase timer, so
+    # this cannot run as a single atomic UPDATE either.
+    update :resolve_hunter_deadline do
+      description "Shoots one uniformly random living player in the hunter's place, once their one-hour window has expired (rules 16-18)."
+      accept []
+      require_atomic? false
+
+      argument :now, :utc_datetime_usec do
+        allow_nil? false
+        default &DateTime.utc_now/0
+      end
+
+      argument :pick, :integer do
+        description "Test-only: selects the fallback target deterministically (index modulo the living player count) instead of drawing at random."
+        allow_nil? true
+      end
+
+      change ResolveHunterDeadline
     end
   end
 
@@ -181,8 +222,16 @@ defmodule WerewolfAsh.Games.Game do
 
     # rule 2 - every other Game action stays exactly as open as it is today;
     # named explicitly so adding the authorizer does not silently
-    # default-deny them.
-    policy action([:create, :update, :destroy, :finish, :end_day, :end_night]) do
+    # default-deny them. rule 21 adds :resolve_hunter_deadline to this list.
+    policy action([
+             :create,
+             :update,
+             :destroy,
+             :finish,
+             :end_day,
+             :end_night,
+             :resolve_hunter_deadline
+           ]) do
       authorize_if always()
     end
   end
@@ -242,6 +291,16 @@ defmodule WerewolfAsh.Games.Game do
 
     attribute :winner, WerewolfAsh.Games.Game.Winner do
       description "Set by the `finish` action once the game is over; nil while it is being played."
+      public? true
+    end
+
+    attribute :pending_hunter_id, :uuid do
+      description "The dealt hunter's own player id while their one-hour shot window is open; nil when none is open. No foreign key (werewolf_ash-qss.7 rule 1's own out-of-scope note) - set only via force_change_attribute inside this bead's changes, never through any action's accept list."
+      public? true
+    end
+
+    attribute :hunter_deadline_at, :utc_datetime_usec do
+      description "When the open hunter window expires, at which point resolve_hunter_deadline shoots a random living player in the hunter's place. Set and cleared together with pending_hunter_id."
       public? true
     end
 

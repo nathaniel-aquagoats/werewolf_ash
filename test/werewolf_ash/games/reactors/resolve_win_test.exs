@@ -3,6 +3,7 @@ defmodule WerewolfAsh.Games.Reactors.ResolveWinTest do
 
   import WerewolfAsh.Generators
 
+  alias Ash.Changeset
   alias WerewolfAsh.Games
   alias WerewolfAsh.Games.Reactors.ResolveWin
 
@@ -82,5 +83,27 @@ defmodule WerewolfAsh.Games.Reactors.ResolveWinTest do
 
     assert {:error, %Ash.Error.Invalid{errors: [%{field: :winner}]}} =
              Games.finish_game(game, :nobody)
+  end
+
+  test "clears an open hunter window on the way to :finished (werewolf_ash-qss.7 rule 19)", %{
+    game: game
+  } do
+    game = start(game)
+
+    hunter =
+      Games.list_players!(query: [filter: [game_id: game.id]], authorize?: false)
+      |> Enum.find(&(&1.role == :hunter))
+
+    game =
+      game
+      |> Changeset.for_update(:update, %{})
+      |> Changeset.force_change_attribute(:pending_hunter_id, hunter.id)
+      |> Changeset.force_change_attribute(:hunter_deadline_at, DateTime.utc_now())
+      |> Ash.update!()
+
+    finished = Games.finish_game!(game, :wolves)
+
+    assert is_nil(finished.pending_hunter_id)
+    assert is_nil(finished.hunter_deadline_at)
   end
 end

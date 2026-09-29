@@ -46,6 +46,8 @@ defmodule WerewolfAsh.GamesTest do
       assert game.day_start == ~T[09:00:00]
       assert game.day_end == ~T[21:00:00]
       assert is_nil(game.phase_ends_at)
+      assert is_nil(game.pending_hunter_id)
+      assert is_nil(game.hunter_deadline_at)
       assert game.owner_id == owner.id
       assert game.owner.id == owner.id
 
@@ -365,6 +367,17 @@ defmodule WerewolfAsh.GamesTest do
       assert [%{number: 1, kind: :day, ended_at: nil}] = phases(game)
     end
 
+    test "rejects :hunter_pending as a state (werewolf_ash-qss.7 rule 2)" do
+      game = generate(game())
+
+      changeset =
+        game
+        |> Changeset.for_update(:update, %{})
+        |> Changeset.change_attribute(:state, :hunter_pending)
+
+      refute changeset.valid?
+    end
+
     test "requires the owner as actor, and leaves every player roleless" do
       %{game: game, owner: owner} = ready()
       stranger = generate(user())
@@ -495,17 +508,38 @@ defmodule WerewolfAsh.GamesTest do
       refute Enum.any?(game_phases, &(&1.kind == :night))
     end
 
-    test "a lynched hunter dies like any other target: no hunter window, straight to night (rule 11)" do
+    test "a lynched hunter opens the one-hour window at once (werewolf_ash-qss.7 rule 3)" do
       %{game: game, players: p} = started_day_game()
       day = open_day_phase(game)
 
       Games.create_action!(day.id, p.seer.id, p.hunter.id, :vote, authorize?: false)
       Games.create_action!(day.id, p.bodyguard.id, p.hunter.id, :vote, authorize?: false)
 
-      game = Games.end_day!(game, %{now: ~U[2026-06-15 20:00:00Z]})
+      now = ~U[2026-06-15 20:00:00Z]
+      game = Games.end_day!(game, %{now: now})
 
       assert Games.get_player!(p.hunter.id, authorize?: false).alive == false
       assert game.state == :night
+      assert game.pending_hunter_id == p.hunter.id
+      assert DateTime.compare(game.hunter_deadline_at, DateTime.add(now, 3600, :second)) == :eq
+    end
+
+    test "a lynch that both kills the hunter and ends the game opens no window (werewolf_ash-qss.7 rule 4)" do
+      %{game: game, players: p} = started_day_game()
+      day = open_day_phase(game)
+
+      Games.update_player!(p.bodyguard, %{alive: false}, authorize?: false)
+      Games.update_player!(p.seer, %{alive: false}, authorize?: false)
+
+      Games.create_action!(day.id, p.villager.id, p.hunter.id, :vote, authorize?: false)
+      Games.create_action!(day.id, p.werewolf.id, p.hunter.id, :vote, authorize?: false)
+
+      game = Games.end_day!(game, %{now: ~U[2026-06-15 20:00:00Z]})
+
+      assert game.state == :finished
+      assert game.winner == :wolves
+      assert is_nil(game.pending_hunter_id)
+      assert is_nil(game.hunter_deadline_at)
     end
   end
 
