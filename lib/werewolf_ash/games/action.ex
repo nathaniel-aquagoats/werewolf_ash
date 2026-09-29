@@ -19,9 +19,13 @@ defmodule WerewolfAsh.Games.Action do
     otp_app: :werewolf_ash,
     domain: WerewolfAsh.Games,
     data_layer: AshPostgres.DataLayer,
-    authorizers: [Ash.Policy.Authorizer]
+    authorizers: [Ash.Policy.Authorizer],
+    extensions: [AshGraphql.Resource]
 
+  alias WerewolfAsh.Games.Action.Actions.CastAction
+  alias WerewolfAsh.Games.Action.Actions.CastKill
   alias WerewolfAsh.Games.Action.Actions.Withdraw
+  alias WerewolfAsh.Games.Action.Actions.WithdrawOwn
   alias WerewolfAsh.Games.Action.Changes.ApplyKill
   alias WerewolfAsh.Games.Action.Changes.ApplyShot
   alias WerewolfAsh.Games.Action.Changes.RecordInvestigationResult
@@ -35,6 +39,15 @@ defmodule WerewolfAsh.Games.Action do
   alias WerewolfAsh.Games.Action.Validations.ShootRequiresPendingHunter
   alias WerewolfAsh.Games.Action.Validations.TargetAlive
   alias WerewolfAsh.Games.Action.Validations.TypeRequiresPhaseAndRole
+
+  graphql do
+    type :action
+
+    # rule 3 - phase_id/actor_id are exposed as fields and as the
+    # phase/actor relationships, but never as a query/filter input named
+    # phaseId/actorId.
+    filterable_fields [:id, :type, :result, :target_id, :target, :phase, :actor]
+  end
 
   postgres do
     table "actions"
@@ -160,6 +173,66 @@ defmodule WerewolfAsh.Games.Action do
 
       run Withdraw
     end
+
+    # rules 14-16, 18 - GraphQL's vote/kill/investigate/protect/shoot: each
+    # resolves the caller's own seat and the game's open phase
+    # (CallerResolution, rules 11-13), then calls the existing code
+    # interface as the caller. No rule is re-checked here; every error
+    # comes back unchanged from the inner call.
+    action :cast_vote, :struct do
+      description "Casts (or recasts) the caller's own day vote."
+      constraints instance_of: __MODULE__
+      argument :game_id, :uuid, allow_nil?: false
+      argument :target_id, :uuid, allow_nil?: false
+      run {CastAction, type: :vote}
+    end
+
+    action :cast_kill, :struct do
+      description "The pack's one kill for the night, cast as the caller's own seat."
+      constraints instance_of: __MODULE__
+      argument :game_id, :uuid, allow_nil?: false
+      argument :target_id, :uuid, allow_nil?: false
+      run CastKill
+    end
+
+    action :cast_investigation, :struct do
+      description "The seer's investigation of another player, cast as the caller's own seat."
+      constraints instance_of: __MODULE__
+      argument :game_id, :uuid, allow_nil?: false
+      argument :target_id, :uuid, allow_nil?: false
+      run {CastAction, type: :investigate}
+    end
+
+    action :cast_protection, :struct do
+      description "Casts (or recasts) the bodyguard's own day pick."
+      constraints instance_of: __MODULE__
+      argument :game_id, :uuid, allow_nil?: false
+      argument :target_id, :uuid, allow_nil?: false
+      run {CastAction, type: :protect}
+    end
+
+    action :cast_shot, :struct do
+      description "The pending hunter's shot, cast as the caller's own seat."
+      constraints instance_of: __MODULE__
+      argument :game_id, :uuid, allow_nil?: false
+      argument :target_id, :uuid, allow_nil?: false
+      run {CastAction, type: :shoot}
+    end
+
+    # rules 17, 17a - GraphQL's withdrawVote/withdrawProtection: resolves the
+    # caller's own seat and the game's open phase, refuses unless that phase
+    # is a day, then calls Games.withdraw_action/4 as the caller.
+    action :withdraw_own_vote do
+      description "Withdraws the caller's own day vote."
+      argument :game_id, :uuid, allow_nil?: false
+      run {WithdrawOwn, type: :vote}
+    end
+
+    action :withdraw_own_protection do
+      description "Withdraws the caller's own bodyguard pick."
+      argument :game_id, :uuid, allow_nil?: false
+      run {WithdrawOwn, type: :protect}
+    end
   end
 
   policies do
@@ -169,20 +242,25 @@ defmodule WerewolfAsh.Games.Action do
       authorize_if expr(actor.user_id == ^actor(:id))
     end
 
-    # rule 8 - a row is readable while the actor holds a seat, any role,
-    # alive or dead, in the row's phase's game, except: a :kill row also
-    # requires a werewolf seat; an :investigate row also requires the
-    # reading actor's own seat to be the row's own actor (the seer who cast
-    # it); a :protect row is narrowed the same way, to the bodyguard who
-    # cast it. None of these three narrowings apply once the reading
-    # actor's own seat in that game is dead - a dead reader sees every
-    # row, cast by or aimed at anyone, the same as :vote/:shoot rows are
-    # already visible to everyone with a seat.
+    # rule 8, narrowed by werewolf_ash-27w.3 rule 33 - a row is readable
+    # while the actor holds a seat, any role, alive or dead, in the row's
+    # phase's game, except: a :kill row also requires a werewolf seat; an
+    # :investigate row also requires the reading actor's own seat to be the
+    # row's own actor (the seer who cast it); a :protect row is narrowed
+    # the same way, to the bodyguard who cast it; a :vote row is readable
+    # to a living reader only while it currently counts (its voter and its
+    # target both alive) or it is the reader's own seat's vote. :shoot rows
+    # stay readable to every living seated reader unconditionally. None of
+    # these narrowings apply once the reading actor's own seat in that game
+    # is dead - a dead reader sees every row, cast by or aimed at anyone.
     policy action_type(:read) do
       authorize_if expr(
                      exists(phase.game.players, user_id == ^actor(:id) and not alive) or
                        (exists(phase.game.players, user_id == ^actor(:id)) and
-                          (type not in [:kill, :investigate, :protect] or
+                          (type == :shoot or
+                             (type == :vote and
+                                (actor.user_id == ^actor(:id) or
+                                   (actor.alive and target.alive))) or
                              (type == :kill and
                                 exists(
                                   phase.game.players,
@@ -206,6 +284,22 @@ defmodule WerewolfAsh.Games.Action do
     # silently default-deny it.
     policy action([:update, :destroy]) do
       authorize_if always()
+    end
+
+    # rule 19 - a request with no bearer token is forbidden and runs
+    # nothing; the real authorization is the inner call's own existing
+    # policy above (action_type(:create)/:withdraw), which still applies
+    # because the caller is passed through as actor.
+    policy action([
+             :cast_vote,
+             :cast_kill,
+             :cast_investigation,
+             :cast_protection,
+             :cast_shot,
+             :withdraw_own_vote,
+             :withdraw_own_protection
+           ]) do
+      authorize_if actor_present()
     end
   end
 

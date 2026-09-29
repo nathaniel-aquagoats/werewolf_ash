@@ -4,6 +4,14 @@ import Config
 config :elixir, :time_zone_database, Tz.TimeZoneDatabase
 
 config :ash_graphql, authorize_update_destroy_with_error?: true
+
+# Game.my_seat (werewolf_ash-27w.3 rule 9) is a public :struct calculation
+# with instance_of: Player, output-only (a GraphQL Player type, never an
+# input). AshGraphql still builds - and warns about - a filter input for it
+# as part of every public calculation's filter type, even though nothing
+# ever filters by it; that advisory warning is silenced here rather than
+# built around, since we do not want a JSON-typed filter input for it.
+config :ash_graphql, warn_on_json_fallback?: false
 config :ash_oban, pro?: false
 
 config :werewolf_ash, Oban,

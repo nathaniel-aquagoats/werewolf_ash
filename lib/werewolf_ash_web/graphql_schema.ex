@@ -2,7 +2,7 @@ defmodule WerewolfAshWeb.GraphqlSchema do
   use Absinthe.Schema
 
   use AshGraphql,
-    domains: [WerewolfAsh.Accounts]
+    domains: [WerewolfAsh.Accounts, WerewolfAsh.Games]
 
   import_types Absinthe.Plug.Types
 

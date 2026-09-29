@@ -48,6 +48,11 @@ defmodule WerewolfAsh.Accounts.User do
 
   graphql do
     type :user
+
+    # werewolf_ash-27w.3 rule 5 - a fellow player's forbidden `email` would
+    # otherwise null the non-null `Player.user`, then the player, then the
+    # game. Reading your own `email` (currentUser) is unchanged.
+    nullable_fields [:email]
   end
 
   field_policies do

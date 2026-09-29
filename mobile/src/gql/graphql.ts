@@ -7,7 +7,7 @@ import { TypedDocumentNode as DocumentNode } from '@graphql-typed-document-node/
 export type CurrentUserQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type CurrentUserQuery = { currentUser: { id: string, email: string } | null };
+export type CurrentUserQuery = { currentUser: { id: string, email: string | null } | null };
 
 export type RequestMagicLinkMutationVariables = Exact<{
   email: string;
@@ -21,7 +21,7 @@ export type SignInWithMagicLinkMutationVariables = Exact<{
 }>;
 
 
-export type SignInWithMagicLinkMutation = { signInWithMagicLink: { result: { id: string, email: string } | null, metadata: { token: string } | null, errors: Array<{ message: string | null, fields: Array<string> | null, code: string | null }> } };
+export type SignInWithMagicLinkMutation = { signInWithMagicLink: { result: { id: string, email: string | null } | null, metadata: { token: string } | null, errors: Array<{ message: string | null, fields: Array<string> | null, code: string | null }> } };
 
 
 export const CurrentUserDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"CurrentUser"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"currentUser"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"email"}}]}}]}}]} as unknown as DocumentNode<CurrentUserQuery, CurrentUserQueryVariables>;
