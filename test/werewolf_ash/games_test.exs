@@ -1160,7 +1160,11 @@ defmodule WerewolfAsh.GamesTest do
       living_view =
         Games.get_phase!(day.id, load: :vote_tally, actor: actor_for(living_reader)).vote_tally
 
-      assert living_view == %{target_ok.id => [%{voter_id: voter_ok.id, counts: true}]}
+      assert Map.keys(living_view) == [target_ok.id]
+
+      assert MapSet.new(living_view[target_ok.id]) ==
+               MapSet.new([%{voter_id: voter_ok.id, counts: true}])
+
       refute Map.has_key?(living_view, target_bad_only.id)
 
       dead_view =
@@ -1172,7 +1176,8 @@ defmodule WerewolfAsh.GamesTest do
                  %{voter_id: voter_bad.id, counts: false}
                ])
 
-      assert dead_view[target_bad_only.id] == [%{voter_id: voter_bad2.id, counts: false}]
+      assert MapSet.new(dead_view[target_bad_only.id]) ==
+               MapSet.new([%{voter_id: voter_bad2.id, counts: false}])
     end
 
     test "a vote cast by a player who has since died is absent from a different living reader, but present marked counts: false for that voter's own read (rule 6)" do
@@ -1191,7 +1196,10 @@ defmodule WerewolfAsh.GamesTest do
       refute Map.has_key?(other_view, target.id)
 
       own_view = Games.get_phase!(day.id, load: :vote_tally, actor: actor_for(voter)).vote_tally
-      assert own_view == %{target.id => [%{voter_id: voter.id, counts: false}]}
+      assert Map.keys(own_view) == [target.id]
+
+      assert MapSet.new(own_view[target.id]) ==
+               MapSet.new([%{voter_id: voter.id, counts: false}])
     end
 
     test "a vote naming a since-dead target is absent for a different living reader, present for a dead reader, and present marked counts: false for the still-living voter themselves (rule 4's own-vote exception)" do
@@ -1214,10 +1222,16 @@ defmodule WerewolfAsh.GamesTest do
       dead_view =
         Games.get_phase!(day.id, load: :vote_tally, actor: actor_for(dead_reader)).vote_tally
 
-      assert dead_view == %{target.id => [%{voter_id: voter.id, counts: false}]}
+      assert Map.keys(dead_view) == [target.id]
+
+      assert MapSet.new(dead_view[target.id]) ==
+               MapSet.new([%{voter_id: voter.id, counts: false}])
 
       own_view = Games.get_phase!(day.id, load: :vote_tally, actor: actor_for(voter)).vote_tally
-      assert own_view == %{target.id => [%{voter_id: voter.id, counts: false}]}
+      assert Map.keys(own_view) == [target.id]
+
+      assert MapSet.new(own_view[target.id]) ==
+               MapSet.new([%{voter_id: voter.id, counts: false}])
     end
 
     test "an actor with no seat, and no actor at all, both return %{} (rule 5)" do
@@ -1244,7 +1258,8 @@ defmodule WerewolfAsh.GamesTest do
       vote!(day, voter, target)
 
       view = Games.get_phase!(day.id, load: :vote_tally, actor: actor_for(voter)).vote_tally
-      assert view == %{target.id => [%{voter_id: voter.id, counts: true}]}
+      assert Map.keys(view) == [target.id]
+      assert MapSet.new(view[target.id]) == MapSet.new([%{voter_id: voter.id, counts: true}])
     end
 
     test "reading :vote_tally on the current night phase seeded with a :kill row returns %{} for a living and a dead reader alike (rules 2, 3)" do
@@ -1307,7 +1322,8 @@ defmodule WerewolfAsh.GamesTest do
                  %{voter_id: voter2.id, counts: true}
                ])
 
-      assert dead_view[target_b.id] == [%{voter_id: voter3.id, counts: true}]
+      assert MapSet.new(dead_view[target_b.id]) ==
+               MapSet.new([%{voter_id: voter3.id, counts: true}])
     end
   end
 end

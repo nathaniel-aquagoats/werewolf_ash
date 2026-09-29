@@ -78,7 +78,7 @@ defmodule WerewolfAsh.Games.Phase.Calculations.VoteTallyTest do
       # this is the specific case a load/3 relationship dependency (always
       # authorize?: false) would have gotten wrong: a genuine non-member.
       outsider = generate(user())
-      assert [%{}] = VoteTally.calculate([day], [], context(%{id: outsider.id}))
+      assert VoteTally.calculate([day], [], context(%{id: outsider.id})) == [%{}]
     end
 
     test "no seat at all, including no actor, returns %{} regardless of which view would otherwise apply (rule 5, 10)" do
@@ -89,7 +89,25 @@ defmodule WerewolfAsh.Games.Phase.Calculations.VoteTallyTest do
 
       vote!(day, villager, target)
 
-      assert [%{}] = VoteTally.calculate([day], [], context(nil))
+      assert VoteTally.calculate([day], [], context(nil)) == [%{}]
+    end
+
+    test "a non-member or nil actor reading with authorize?: false still gets %{} from its own Player lookup, not from the read being authorization-denied (rule 10)" do
+      game = generate(game())
+      day = generate(phase(game_id: game.id, kind: :day, number: 1))
+      voter = generate(player(game_id: game.id, role: :villager))
+      target = generate(player(game_id: game.id, role: :villager))
+
+      vote!(day, voter, target)
+
+      outsider = generate(user())
+
+      # authorize?: false means the vote row is actually read back (rule 1's
+      # own read is not what is filtering this out); the %{} here can only
+      # come from `reader_view/2` finding no `Player` seat for this actor and
+      # `narrow/2`'s `:none` clause refusing to fabricate a view from it.
+      assert VoteTally.calculate([day], [], context(%{id: outsider.id}, false)) == [%{}]
+      assert VoteTally.calculate([day], [], context(nil, false)) == [%{}]
     end
 
     test "a phase with no :vote rows returns %{} for a member, whether a night's :kill row or a day before any vote (rules 2, 3)" do
@@ -102,8 +120,8 @@ defmodule WerewolfAsh.Games.Phase.Calculations.VoteTallyTest do
 
       Games.create_kill_action!(night.id, wolf.id, victim.id, authorize?: false)
 
-      assert [%{}] = VoteTally.calculate([day], [], context(actor_for(reader)))
-      assert [%{}] = VoteTally.calculate([night], [], context(actor_for(reader)))
+      assert VoteTally.calculate([day], [], context(actor_for(reader))) == [%{}]
+      assert VoteTally.calculate([night], [], context(actor_for(reader))) == [%{}]
     end
 
     test "the same seeded votes narrow differently for a living non-voter, a dead reader, and the living reader who cast a now-non-counting vote (rules 4, 6, 9, 10)" do
