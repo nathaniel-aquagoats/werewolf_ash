@@ -16,7 +16,13 @@ defmodule WerewolfAsh.Games.Game.Changes.ResolveHunterDeadline do
   A no-op, changing nothing, when no window is open (including on a
   finished game, whose `finish` action already cleared it - rule 19) or
   `now` has not yet reached the deadline (rule 18); running it twice with
-  the same arguments therefore shoots at most one player.
+  the same arguments therefore shoots at most one player. The window and
+  deadline are decided from the game's own current row, re-read with a
+  `FOR UPDATE` lock at the start of this hook, not from the possibly-stale
+  struct the caller passed in: the caller may be holding the same record
+  across two calls (or the same struct another call already resolved), and
+  only a fresh read tells a spent or too-early window apart from an open
+  one.
 
   `resolve_hunter_deadline` is meant to be called by the scheduler
   (werewolf_ash-qss.9), with no real actor behind the fallback shot it may
@@ -29,6 +35,7 @@ defmodule WerewolfAsh.Games.Game.Changes.ResolveHunterDeadline do
 
   alias Ash.Changeset
   alias WerewolfAsh.Games
+  alias WerewolfAsh.Games.Game
 
   @impl true
   def change(changeset, _opts, _context) do
@@ -36,9 +43,17 @@ defmodule WerewolfAsh.Games.Game.Changes.ResolveHunterDeadline do
     pick = Changeset.get_argument(changeset, :pick)
 
     Changeset.after_action(changeset, fn _changeset, game ->
-      resolve(game, now, pick)
+      game
+      |> reload!()
+      |> resolve(now, pick)
     end)
   end
+
+  # Re-reads the game's own current row, locked `FOR UPDATE` for the rest of
+  # this transaction, instead of trusting the struct the caller handed the
+  # action - that struct may predate a window this same game already spent,
+  # in this call or an earlier one.
+  defp reload!(game), do: Ash.get!(Game, game.id, authorize?: false, lock: :for_update)
 
   # rule 18 - no window open (nil pointer covers a finished game too, since
   # `finish` already cleared it).

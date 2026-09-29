@@ -62,13 +62,17 @@ defmodule WerewolfAsh.Games.Game.Changes.ResolveHunterDeadlineTest do
       assert Games.list_actions!(query: [filter: [type: :shoot]], authorize?: false) == []
     end
 
-    test "on a finished game, is a silent no-op" do
-      game = force_state(generate(game()), :finished)
+    test "on a finished game, is a silent no-op (rule 19 already cleared the window)" do
+      %{game: game} = open_game()
 
-      resolved = Games.resolve_hunter_deadline!(game, %{now: DateTime.utc_now()})
+      finished = Games.finish_game!(game, :wolves)
+      assert is_nil(finished.pending_hunter_id)
+
+      resolved = Games.resolve_hunter_deadline!(finished, %{now: DateTime.utc_now()})
 
       assert is_nil(resolved.pending_hunter_id)
       assert resolved.state == :finished
+      assert Games.list_actions!(query: [filter: [type: :shoot]], authorize?: false) == []
     end
 
     test "at or past the deadline, shoots the living player at `pick` modulo the living count, ordered by id (rule 16)" do
@@ -145,6 +149,25 @@ defmodule WerewolfAsh.Games.Game.Changes.ResolveHunterDeadlineTest do
 
       assert is_nil(second_resolved.pending_hunter_id)
       assert [_still_one_shot] = shoot_rows(game)
+    end
+
+    test "rule 18 - genuinely idempotent: run twice against the same original, now-stale struct" do
+      %{game: game} = open_game()
+
+      generate(player(game_id: game.id, role: :villager))
+      generate(player(game_id: game.id, role: :villager))
+
+      # Both calls are handed the very struct captured before either ran -
+      # not `first_resolved` - so a change that trusts the caller's struct
+      # instead of re-reading the game's own row would find a still-open
+      # window on the second call and raise trying to shoot with an
+      # already-spent pointer, rather than silently doing nothing.
+      first_resolved = Games.resolve_hunter_deadline!(game, %{now: @deadline, pick: 0})
+      second_resolved = Games.resolve_hunter_deadline!(game, %{now: @deadline, pick: 0})
+
+      assert is_nil(first_resolved.pending_hunter_id)
+      assert is_nil(second_resolved.pending_hunter_id)
+      assert [_one_shot] = shoot_rows(game)
     end
   end
 end

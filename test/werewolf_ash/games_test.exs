@@ -118,6 +118,25 @@ defmodule WerewolfAsh.GamesTest do
       assert updated.day_end == ~T[19:30:00]
     end
 
+    test "update never accepts pending_hunter_id or hunter_deadline_at by hand (werewolf_ash-qss.7 rule 1)" do
+      game = generate(game())
+      hunter = generate(player(game_id: game.id, role: :hunter))
+      deadline = DateTime.utc_now()
+
+      assert {:error, %Ash.Error.Invalid{errors: [error]}} =
+               Games.update_game(game, %{pending_hunter_id: hunter.id})
+
+      assert %{input: :pending_hunter_id} = error
+
+      assert {:error, %Ash.Error.Invalid{errors: [error]}} =
+               Games.update_game(game, %{hunter_deadline_at: deadline})
+
+      assert %{input: :hunter_deadline_at} = error
+
+      assert is_nil(Games.get_game!(game.id, authorize?: false).pending_hunter_id)
+      assert is_nil(Games.get_game!(game.id, authorize?: false).hunter_deadline_at)
+    end
+
     test "state only accepts known values" do
       game = generate(game())
 

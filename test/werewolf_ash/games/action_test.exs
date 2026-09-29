@@ -902,6 +902,21 @@ defmodule WerewolfAsh.Games.ActionTest do
                )
     end
 
+    test "a living seated player who is neither the hunter nor the target still reads the :shoot row (rule 24)",
+         %{game: game, players: p} do
+      day = current_phase(game)
+      force_pending_hunter(game, p.hunter.id)
+
+      Games.create_action!(day.id, p.hunter.id, p.villager.id, :shoot, actor: actor_for(p.hunter))
+
+      visible =
+        Games.list_actions!(query: [filter: [type: :shoot]], actor: actor_for(p.bodyguard))
+
+      assert [%{actor_id: actor_id, target_id: target_id}] = visible
+      assert actor_id == p.hunter.id
+      assert target_id == p.villager.id
+    end
+
     test "a second shot is refused, by the same or a different actor (rule 15)", %{
       game: game,
       players: p

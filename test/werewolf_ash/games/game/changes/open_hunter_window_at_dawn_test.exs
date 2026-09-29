@@ -15,11 +15,11 @@ defmodule WerewolfAsh.Games.Game.Changes.OpenHunterWindowAtDawnTest do
     |> Ash.update!()
   end
 
-  defp force_pending_hunter(game, hunter_id) do
+  defp force_pending_hunter(game, hunter_id, deadline \\ DateTime.utc_now()) do
     game
     |> Changeset.for_update(:update, %{})
     |> Changeset.force_change_attribute(:pending_hunter_id, hunter_id)
-    |> Changeset.force_change_attribute(:hunter_deadline_at, DateTime.utc_now())
+    |> Changeset.force_change_attribute(:hunter_deadline_at, deadline)
     |> Ash.update!()
   end
 
@@ -106,19 +106,32 @@ defmodule WerewolfAsh.Games.Game.Changes.OpenHunterWindowAtDawnTest do
       generate(player(game_id: game.id, role: :werewolf))
       generate(player(game_id: game.id, role: :villager))
       Games.update_player!(hunter, %{alive: false}, authorize?: false)
-      game = force_pending_hunter(game, hunter.id)
+
+      # A deadline far from `@now + 1h`: if the guard were dropped, this
+      # clause would reopen the window and move the deadline to `@now`
+      # plus one hour instead of leaving the earlier, still-open one alone.
+      existing_deadline = ~U[2020-01-01 00:00:00Z]
+      game = force_pending_hunter(game, hunter.id, existing_deadline)
 
       {changeset, after_resolve, window_hook} = run_up_to_window(game)
 
       assert {:ok, resolved} = window_hook.(changeset, after_resolve)
 
       assert resolved.pending_hunter_id == hunter.id
+      assert DateTime.compare(resolved.hunter_deadline_at, existing_deadline) == :eq
     end
 
     test "opens no window when the dawn win check finishes the game (rule 8)" do
       %{game: game} = night_game()
 
       generate(player(game_id: game.id, role: :werewolf))
+
+      # A dead, dealt hunter with no `:shoot` row and no open window would,
+      # on its own, satisfy every other clause `maybe_open/2` checks: only
+      # the `state: :day` guard (missed once the dawn win check has already
+      # finished the game) keeps this from opening a window anyway.
+      hunter = generate(player(game_id: game.id, role: :hunter))
+      Games.update_player!(hunter, %{alive: false}, authorize?: false)
 
       {changeset, after_resolve, window_hook} = run_up_to_window(game)
 
