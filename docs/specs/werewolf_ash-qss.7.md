@@ -1,5 +1,7 @@
 # werewolf_ash-qss.7: Hunter: pending state, 1h window, random fallback
 
+Implemented in PR #27.
+
 Depends on: none
 
 ## For the owner
