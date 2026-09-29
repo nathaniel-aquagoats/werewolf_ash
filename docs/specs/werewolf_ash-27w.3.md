@@ -1,5 +1,7 @@
 # werewolf_ash-27w.3: Expose game queries and mutations in GraphQL
 
+Implemented in PR #29.
+
 Depends on: werewolf_ash-qss.7
 
 ## For the owner
