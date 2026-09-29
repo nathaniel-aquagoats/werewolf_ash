@@ -31,8 +31,18 @@ if [ "$EVENT" = "PreToolUse" ]; then
   esac
 fi
 
-PROJECT_DIR="${CLAUDE_PROJECT_DIR:-${CWD:-$PWD}}"
+# Gate the tree the agent is working in. A local bead runs in a git worktree
+# (.worktrees/<bead-id>), and CLAUDE_PROJECT_DIR would gate the main checkout
+# instead; each worktree also gets its own test database.
+START_DIR="${CWD:-${CLAUDE_PROJECT_DIR:-$PWD}}"
+PROJECT_DIR="$(git -C "$START_DIR" rev-parse --show-toplevel 2>/dev/null || echo "$START_DIR")"
 cd "$PROJECT_DIR" 2>/dev/null || exit 0
+case "$PROJECT_DIR" in
+*/.worktrees/*)
+  : "${MIX_TEST_PARTITION:=_$(basename "$PROJECT_DIR" | tr -c 'a-zA-Z0-9\n' '_')}"
+  export MIX_TEST_PARTITION
+  ;;
+esac
 
 # A push that changes nothing outside docs/specs/ carries no code: the cloud
 # orchestrator's empty "<bead-id>: start" claim commit, its one-line spec stamp,

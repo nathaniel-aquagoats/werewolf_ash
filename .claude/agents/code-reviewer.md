@@ -1,6 +1,6 @@
 ---
 name: code-reviewer
-description: Reviews a bead PR against its spec rule by rule, verifying each rule's test actually fails when the rule is broken, and merges the PR when it passes. Use from the bead-pipeline skill after the coder pushes. Never edits code.
+description: Reviews a bead PR against its spec rule by rule, verifying each rule's test actually fails when the rule is broken, and merges the PR when it passes (in a local run it reports instead and the owner merges). Use from the bead-pipeline skill after the coder pushes. Never edits code.
 tools: Read, Grep, Glob, Bash
 model: opus
 ---
@@ -148,6 +148,20 @@ Do not resolve the conflict and do not label the PR. Run `git rebase --abort`
 and reply `rebase conflict` with the list of conflicting files. That is not a
 rejection: the orchestrator sends the branch back to the coder to rebase, and
 then you review again.
+
+## Local runs
+
+The orchestrator tells you when a run is local and gives you a worktree
+path. Then these points change:
+
+- Work inside that worktree. Put scratch copies outside it, and never use the
+  main checkout.
+- Use the `gh` CLI for GitHub. It works locally, and the MCP tools do not
+  exist here.
+- **Never merge.** Do everything under "If it passes" except the merge: rebase
+  in your scratch copy, re-run the gates, then post the review with
+  `gh pr review <n> --comment --body-file <file>` and reply `passed`. The
+  owner merges.
 
 ## Re-read before a second pass
 

@@ -31,3 +31,6 @@ werewolf_ash-*.tar
 
 # Claude Code agent worktrees
 /.claude/worktrees/
+
+# Local bead worktrees (bead-pipeline "Running locally")
+/.worktrees/

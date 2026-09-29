@@ -1,6 +1,6 @@
 ---
 name: coder
-description: Implements a spec end to end on a bead branch in the cloud session and pushes it. Use from the bead-pipeline skill, or when re-running an implementation against code-reviewer findings. Writes code and tests; never merges.
+description: Implements a spec end to end on a bead branch, in a cloud session or a local worktree, and pushes it. Use from the bead-pipeline skill, or when re-running an implementation against code-reviewer findings. Writes code and tests; never merges.
 tools: Read, Grep, Glob, Bash, Write, Edit
 model: sonnet
 ---
@@ -14,6 +14,10 @@ The spec at `docs/specs/<bead-id>.md`, with branch `bead/<bead-id>` already
 checked out. The orchestrator's `<bead-id>: start` commit and its stamp on the
 spec are not prior work. If the branch carries anything more, you are
 continuing that work against reviewer findings, not starting again.
+
+**In a local run** the orchestrator gives you a worktree path. `cd` into it
+first and run every command there, never in the main checkout. The gates hook
+checks whichever tree you are in, and gives it its own test database.
 
 **If you are continuing a branch, rebase it onto the current `main` first.**
 Run `git fetch origin && git rebase origin/main`. Resolve conflicts by keeping

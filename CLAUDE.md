@@ -119,7 +119,9 @@ Real-time (wall-clock day/night) werewolf game. Ash 3 domain is the source of tr
 Beads are specified locally, approved by merging a spec pull request, built by
 a claude.ai cloud routine that works through the approved specs, up to two at
 a time, and merged by the reviewer that checked them. The old worktree-and-coordinator
-workflow is retired; `.claude/worktrees/` is no longer used.
+workflow is retired; `.claude/worktrees/` is no longer used. The owner can
+also have a bead built and reviewed in their own session instead of the cloud
+(see "Locally, by hand" below).
 
 ```
 grill the owner -> spec-author -> spec-reviewer -> spec PR -> owner merges it
@@ -235,6 +237,16 @@ and `git push` work. GitHub GraphQL is refused with HTTP 403, which rules out
 `gh api` write paths are proxy-refused. PRs are created, updated, closed and
 merged with the `mcp__github__*` tools instead. Deleting a remote branch is
 impossible from the cloud (403); merged branches are pruned by the local sync.
+
+### Locally, by hand
+
+When the owner says "implement `<bead-id>` here", the main session runs the
+bead-pipeline skill's **Running locally** section. It uses the same queue check
+and the same claim PR, so the cloud never builds the bead as well. The coder
+and code-reviewer run in `.worktrees/<bead-id>`, and `gates.sh` gates that
+tree on its own test database. The reviewer posts its result on the PR and
+does not merge: the owner merges. A failure comes back in chat, and
+`needs-human` is added only if the owner asks for it.
 
 ### Back again
 

@@ -1,12 +1,13 @@
 ---
 name: bead-pipeline
-description: "Run the bead queue in a cloud routine session: decide with next-bead.py which approved spec in docs/specs to build (or which named bead to resume), then take it to a merged PR. Orchestrates the coder and code-reviewer subagents."
+description: "Run the bead queue in a cloud routine session, or build one named bead locally when the owner says to implement it here (see Running locally): decide with next-bead.py which approved spec in docs/specs to build (or which named bead to resume), then take it to a merged PR. Orchestrates the coder and code-reviewer subagents."
 ---
 
 # Bead pipeline
 
 You are the orchestrator of the bead queue, in a cloud session with no human
-attached. Nobody will answer a question, so never ask one: every run ends in a
+attached. (When the owner asks for a bead to be built in their own session,
+skip to **Running locally** at the end: it lists what changes.) Nobody will answer a question, so never ask one: every run ends in a
 merged PR, a PR labelled `needs-human`, or a decision to start nothing that you
 state plainly.
 
@@ -219,3 +220,48 @@ again, and fills the free slot.
 - Report at the end: the output of `next-bead.py`, and if a bead ran, the bead
   id, the PR number and URL, merged or `needs-human`, and the reviewer's
   rule-by-rule result.
+
+## Running locally
+
+The owner can say "implement `<bead-id>` here". The main session then runs
+this skill itself, with the owner present. Everything above still applies —
+decide, claim with a PR, stamp, coder, reviewer, one retry, rebase hand-backs —
+except for the points below.
+
+- **GitHub.** Locally the `gh` CLI works, and there are no `mcp__github__*`
+  tools. Use `gh pr create`, `gh pr edit`, `gh pr view` and `gh api`. The
+  cloud-only warnings about `gh` do not apply here.
+- **Decide.** Run `next-bead.py --check <bead-id>`. Proceed only on `next` or
+  `continue`, and otherwise tell the owner what it printed.
+- **Claim in a worktree.** Never use the owner's checkout. Work in
+  `.worktrees/<bead-id>`, which is gitignored:
+
+  ```bash
+  git fetch origin
+  git worktree add -b bead/<bead-id> .worktrees/<bead-id> origin/main   # new bead
+  git worktree add .worktrees/<bead-id> bead/<bead-id>                  # branch already exists
+  ```
+
+  Then, inside the worktree, do step 2 as written: the empty start commit,
+  push, the PR opened with `gh pr create`, `--claimed`, the stamp, push. Run
+  `mix deps.get` there once. The open PR is what keeps the cloud queue from
+  building the same bead, so open it before any work.
+- **Coder and reviewer.** Give each one the absolute worktree path. Say that
+  this is a local run, and that every command runs inside that worktree and
+  never in the main checkout. The gates hook gates whichever tree the agent is
+  working in, and gives a `.worktrees/` tree its own test database
+  (`MIX_TEST_PARTITION`). Run them in the background so the owner can keep
+  working. The run still is not over until the reviewer has reported.
+- **The owner merges.** A local reviewer posts its review with
+  `gh pr review <n> --comment` and never merges. When it passes, give the owner
+  the PR link and the rule-by-rule result. The owner merges it, or tells you to
+  merge it, in which case run `gh pr merge <n> --squash --subject "<PR title>"`.
+  The squash title rule is unchanged.
+- **Failure comes back in chat.** A second rejection, or a coder that cannot
+  meet the spec, goes to the owner here, with the PR left open. Add
+  `needs-human` only if the owner asks for it, because the label pauses the
+  cloud queue.
+- **After the merge.** Run `git worktree remove .worktrees/<bead-id>` and
+  `bash .claude/hooks/sync-beads.sh`. The sync closes the bead and prunes the
+  branch. The merge also fires the cloud routine, like any PR close, so the
+  queue may start the next bead in the cloud. That is expected.
