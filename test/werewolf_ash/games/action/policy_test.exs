@@ -180,9 +180,61 @@ defmodule WerewolfAsh.Games.Action.PolicyTest do
                Games.get_action(ctx.protect.id, actor: actor_for(ctx.villager))
     end
 
-    test ":vote is readable by any game member", ctx do
+    test "a counting :vote is readable by any game member", ctx do
       assert Games.get_action!(ctx.vote.id, actor: actor_for(ctx.villager)).id == ctx.vote.id
       assert Games.get_action!(ctx.vote.id, actor: actor_for(ctx.wolf)).id == ctx.vote.id
+    end
+
+    # werewolf_ash-27w.3 rule 33 - a living reader reads a :vote row only
+    # while it currently counts (voter and target both alive) or is their
+    # own; a dead reader reads every :vote row.
+    test "rule 33 - a living reader cannot read a dead voter's vote, or one aimed at a dead target, but a dead reader reads both",
+         ctx do
+      dead_voter = generate(player(game_id: ctx.game.id, role: :villager))
+      voter2 = generate(player(game_id: ctx.game.id, role: :villager))
+      dead_target = generate(player(game_id: ctx.game.id, role: :villager))
+      day_phase_id = Games.get_action!(ctx.vote.id, authorize?: false).phase_id
+
+      from_dead_voter =
+        Games.create_action!(day_phase_id, dead_voter.id, ctx.target.id, :vote, authorize?: false)
+
+      to_dead_target =
+        Games.create_action!(day_phase_id, voter2.id, dead_target.id, :vote, authorize?: false)
+
+      Games.update_player!(dead_voter, %{alive: false})
+      Games.update_player!(dead_target, %{alive: false})
+
+      # ctx.wolf is a third-party living reader, neither vote's own voter.
+      assert {:error, %Ash.Error.Invalid{}} =
+               Games.get_action(from_dead_voter.id, actor: actor_for(ctx.wolf))
+
+      assert {:error, %Ash.Error.Invalid{}} =
+               Games.get_action(to_dead_target.id, actor: actor_for(ctx.wolf))
+
+      dead_reader = ctx.villager
+      Games.update_player!(dead_reader, %{alive: false})
+
+      assert Games.get_action!(from_dead_voter.id, actor: actor_for(dead_reader)).id ==
+               from_dead_voter.id
+
+      assert Games.get_action!(to_dead_target.id, actor: actor_for(dead_reader)).id ==
+               to_dead_target.id
+    end
+
+    test "rule 33 - a living reader always reads their own vote, even once it stops counting",
+         ctx do
+      # ctx.vote is cast by ctx.villager; once its target dies it stops
+      # counting, but stays visible to its own voter.
+      Games.update_player!(ctx.target, %{alive: false})
+
+      assert Games.get_action!(ctx.vote.id, actor: actor_for(ctx.villager)).id == ctx.vote.id
+    end
+
+    test "rule 33 - an outsider with no seat reads no :vote row", ctx do
+      outsider = generate(user())
+
+      assert {:error, %Ash.Error.Invalid{}} =
+               Games.get_action(ctx.vote.id, actor: %{id: outsider.id})
     end
 
     test "a dead non-wolf, non-seer, non-bodyguard game member reads a :kill row once dead, but not while alive",

@@ -20,10 +20,12 @@ defmodule WerewolfAsh.Games.Game do
     domain: WerewolfAsh.Games,
     data_layer: AshPostgres.DataLayer,
     authorizers: [Ash.Policy.Authorizer],
-    extensions: [AshStateMachine]
+    extensions: [AshStateMachine, AshGraphql.Resource]
 
+  alias WerewolfAsh.Games.Game.Calculations.MySeat
   alias WerewolfAsh.Games.Game.Changes.AdvancePhase
   alias WerewolfAsh.Games.Game.Changes.DealRoles
+  alias WerewolfAsh.Games.Game.Changes.GenerateJoinCode
   alias WerewolfAsh.Games.Game.Changes.OpenHunterWindowAtDawn
   alias WerewolfAsh.Games.Game.Changes.OpenHunterWindowOnLynch
   alias WerewolfAsh.Games.Game.Changes.ResolveDayVote
@@ -41,6 +43,40 @@ defmodule WerewolfAsh.Games.Game do
   alias WerewolfAsh.Games.Game.Validations.RoleCompositionFits
 
   @states [:lobby, :day, :night, :finished]
+
+  graphql do
+    type :game
+
+    # rule 3 - owner_id is exposed as a field and as the owner relationship,
+    # but never as a query/filter input named ownerId; every other
+    # filterable field keeps AshGraphql's own default.
+    filterable_fields [
+      :id,
+      :name,
+      :join_code,
+      :timezone,
+      :day_start,
+      :day_end,
+      :phase_ends_at,
+      :state,
+      :winner,
+      :pending_hunter_id,
+      :hunter_deadline_at,
+      :role_distribution_mode,
+      :manual_werewolf_count,
+      :seer_enabled,
+      :bodyguard_enabled,
+      :hunter_enabled,
+      :min_players,
+      :max_players,
+      :last_phase_number,
+      :owner,
+      :players,
+      :phases,
+      :current_phase,
+      :my_seat
+    ]
+  end
 
   postgres do
     table "games"
@@ -80,6 +116,39 @@ defmodule WerewolfAsh.Games.Game do
     update :update do
       primary? true
       accept [:name, :timezone, :day_start, :day_end]
+    end
+
+    # rules 20-23 - the GraphQL-facing create: the server invents the join
+    # code and seats the caller as owner; no client `joinCode`/`ownerId`.
+    create :open do
+      description "Creates a new game, generating its join code and seating the caller as owner."
+      accept [:name, :timezone, :day_start, :day_end]
+
+      argument :players, {:array, :map} do
+        description "Players to add to the game as it is created."
+        allow_nil? false
+        default []
+        public? false
+      end
+
+      # rule 21 - owner_id must be staged before SeatOwner reads it, and
+      # before manage_relationship builds the :players argument from it;
+      # relate_actor is too late for that ordering.
+      change set_attribute(:owner_id, actor(:id))
+      change SeatOwner
+      change manage_relationship(:players, type: :create)
+
+      # rules 22-23 - draws the join code the client never supplies.
+      change GenerateJoinCode
+    end
+
+    # rule 7 - myGames: no filter of its own (an actor-referencing filter on
+    # a read action raises ReadActionRequiresActor with no token); only a
+    # sort. The existing action_type(:read) policy is what narrows the
+    # result to the caller's own games.
+    read :mine do
+      description "Every game the caller is seated in, newest created first."
+      prepare build(sort: [inserted_at: :desc, id: :desc])
     end
 
     # The consistency validations (rules 4-7) read resulting attribute
@@ -218,6 +287,12 @@ defmodule WerewolfAsh.Games.Game do
     # `before_action?: true` above so this policy gets to decide first.
     policy action([:start, :update_settings]) do
       authorize_if relates_to_actor_via(:owner)
+    end
+
+    # rule 21 - only a signed-in caller may open a game; :mine needs no
+    # entry of its own, since it is a :read action already covered above.
+    policy action(:open) do
+      authorize_if actor_present()
     end
 
     # rule 2 - every other Game action stays exactly as open as it is today;
@@ -370,6 +445,18 @@ defmodule WerewolfAsh.Games.Game do
       public? true
       filter expr(is_nil(ended_at))
       sort number: :desc
+    end
+  end
+
+  calculations do
+    # rule 9 - the caller's own seat in this game (mySeat), or nil; a module
+    # calculation doing its own authorized Games.list_players read, like
+    # Phase.Calculations.VoteTally.
+    calculate :my_seat, :struct, {MySeat, []} do
+      public? true
+      allow_nil? true
+      filterable? false
+      constraints instance_of: WerewolfAsh.Games.Player
     end
   end
 

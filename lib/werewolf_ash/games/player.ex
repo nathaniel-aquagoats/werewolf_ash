@@ -8,12 +8,33 @@ defmodule WerewolfAsh.Games.Player do
     otp_app: :werewolf_ash,
     domain: WerewolfAsh.Games,
     data_layer: AshPostgres.DataLayer,
-    authorizers: [Ash.Policy.Authorizer]
+    authorizers: [Ash.Policy.Authorizer],
+    extensions: [AshGraphql.Resource]
 
+  alias WerewolfAsh.Games.Player.Actions.JoinAsSelf
+  alias WerewolfAsh.Games.Player.Actions.LeaveAsSelf
   alias WerewolfAsh.Games.Player.Changes.ResolveGameByJoinCode
   alias WerewolfAsh.Games.Player.Validations.GameInLobby
   alias WerewolfAsh.Games.Player.Validations.GameNotFull
+  alias WerewolfAsh.Games.Player.Validations.OwnerCannotLeave
   alias WerewolfAsh.Games.Player.Validations.UserHasName
+
+  graphql do
+    type :player
+
+    # rule 3 - user_id is exposed as a field and as the user relationship,
+    # but never as a query/filter input named userId.
+    filterable_fields [
+      :id,
+      :role,
+      :alive,
+      :joined_at,
+      :game_id,
+      :game,
+      :performed_actions,
+      :targeted_by_actions
+    ]
+  end
 
   postgres do
     table "players"
@@ -87,6 +108,35 @@ defmodule WerewolfAsh.Games.Player do
       require_atomic? false
       validate {GameInLobby, field: :game_id}
     end
+
+    # rule 24 - joinGame: upcases the code and joins as the caller, never a
+    # client-supplied user_id.
+    action :join_as_self, :struct do
+      description "Joins the caller's own user into the game named by its join_code."
+      constraints instance_of: __MODULE__
+
+      argument :join_code, :string do
+        allow_nil? false
+      end
+
+      run JoinAsSelf
+    end
+
+    # rules 25-26 - leaveGame: resolves the caller's own seat and refuses
+    # the owner outright before Games.remove_player/2 ever runs. No return
+    # type is declared: like :withdraw, a bare :ok from
+    # Games.remove_player/2 is what AshGraphql renders as `true`.
+    action :leave_as_self do
+      description "Removes the caller's own seat from the named game."
+
+      argument :game_id, :uuid do
+        allow_nil? false
+      end
+
+      validate OwnerCannotLeave
+
+      run LeaveAsSelf
+    end
   end
 
   policies do
@@ -101,6 +151,13 @@ defmodule WerewolfAsh.Games.Player do
     # rule 6 - every write action stays exactly as open as it is today.
     policy action([:create, :join, :update, :destroy]) do
       authorize_if always()
+    end
+
+    # rules 24, 25 - only a signed-in caller may join or leave as themselves;
+    # :join's own policy (the existing action([:create, :join, ...]) rule
+    # above) is untouched.
+    policy action([:join_as_self, :leave_as_self]) do
+      authorize_if actor_present()
     end
   end
 

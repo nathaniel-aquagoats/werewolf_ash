@@ -7,9 +7,18 @@ defmodule WerewolfAsh.Games.Phase do
   use Ash.Resource,
     otp_app: :werewolf_ash,
     domain: WerewolfAsh.Games,
-    data_layer: AshPostgres.DataLayer
+    data_layer: AshPostgres.DataLayer,
+    extensions: [AshGraphql.Resource]
 
   alias WerewolfAsh.Games.Phase.Calculations.VoteTally
+
+  graphql do
+    type :phase
+
+    # rule 4 - nothing writes :summary yet, and Phase has no policy of its
+    # own to narrow it later.
+    hide_fields [:summary]
+  end
 
   postgres do
     table "phases"
