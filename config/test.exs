@@ -9,7 +9,7 @@ config :werewolf_ash, WerewolfAsh.Repo,
   hostname: "localhost",
   database: "werewolf_ash_test#{System.get_env("MIX_TEST_PARTITION")}",
   pool: Ecto.Adapters.SQL.Sandbox,
-  pool_size: 10
+  pool_size: System.schedulers_online() * 2
 
 config :werewolf_ash, WerewolfAshWeb.Endpoint,
   http: [ip: {127, 0, 0, 1}, port: 4002],
