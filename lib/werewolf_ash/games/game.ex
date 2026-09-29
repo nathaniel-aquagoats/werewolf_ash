@@ -20,18 +20,22 @@ defmodule WerewolfAsh.Games.Game do
     domain: WerewolfAsh.Games,
     data_layer: AshPostgres.DataLayer,
     authorizers: [Ash.Policy.Authorizer],
-    extensions: [AshStateMachine, AshGraphql.Resource]
+    extensions: [AshStateMachine, AshGraphql.Resource, AshOban]
 
   alias WerewolfAsh.Games.Game.Calculations.MySeat
   alias WerewolfAsh.Games.Game.Changes.AdvancePhase
+  alias WerewolfAsh.Games.Game.Changes.CancelScheduledJobs
   alias WerewolfAsh.Games.Game.Changes.DealRoles
+  alias WerewolfAsh.Games.Game.Changes.EndPhaseOnSchedule
   alias WerewolfAsh.Games.Game.Changes.GenerateJoinCode
+  alias WerewolfAsh.Games.Game.Changes.HunterDeadlineOnSchedule
   alias WerewolfAsh.Games.Game.Changes.OpenHunterWindowAtDawn
   alias WerewolfAsh.Games.Game.Changes.OpenHunterWindowOnLynch
   alias WerewolfAsh.Games.Game.Changes.ResolveDayVote
   alias WerewolfAsh.Games.Game.Changes.ResolveHunterDeadline
   alias WerewolfAsh.Games.Game.Changes.ResolveNightWin
   alias WerewolfAsh.Games.Game.Changes.SeatOwner
+  alias WerewolfAsh.Games.Game.ScheduledJobs
   alias WerewolfAsh.Games.Game.Validations.ActorIsOwner
   alias WerewolfAsh.Games.Game.Validations.CompositionFitsAtCap
   alias WerewolfAsh.Games.Game.Validations.KnownTimezone
@@ -93,6 +97,35 @@ defmodule WerewolfAsh.Games.Game do
       transition :end_day, from: :day, to: :night
       transition :end_night, from: :night, to: :day
       transition :finish, from: [:day, :night], to: :finished
+    end
+  end
+
+  # No cron: each trigger is enqueued for its exact time by ScheduledJobs
+  # when a phase or hunter window opens. `lock_for_update?` is off because the
+  # actions lock the row themselves, inside their own transaction.
+  oban do
+    triggers do
+      trigger :end_phase do
+        action :end_phase_on_schedule
+        where expr(state in [:day, :night])
+        queue :game_clock
+        scheduler_cron false
+        max_attempts 1_000_000
+        backoff &ScheduledJobs.backoff/1
+        lock_for_update? false
+        worker_module_name WerewolfAsh.Games.Game.Workers.EndPhase
+      end
+
+      trigger :hunter_deadline do
+        action :hunter_deadline_on_schedule
+        where expr(state in [:day, :night] and not is_nil(pending_hunter_id))
+        queue :game_clock
+        scheduler_cron false
+        max_attempts 1_000_000
+        backoff &ScheduledJobs.backoff/1
+        lock_for_update? false
+        worker_module_name WerewolfAsh.Games.Game.Workers.HunterDeadline
+      end
     end
   end
 
@@ -243,6 +276,7 @@ defmodule WerewolfAsh.Games.Game do
     update :finish do
       description "Closes the game, recording which team won."
       accept []
+      require_atomic? false
       argument :winner, WerewolfAsh.Games.Game.Winner, allow_nil?: false
       change set_attribute(:winner, arg(:winner))
 
@@ -250,6 +284,31 @@ defmodule WerewolfAsh.Games.Game do
       change set_attribute(:pending_hunter_id, nil)
       change set_attribute(:hunter_deadline_at, nil)
       change transition_state(:finished)
+
+      # werewolf_ash-qss.9 rule 22 - no timer outlives the game.
+      change CancelScheduledJobs
+    end
+
+    # werewolf_ash-qss.9 - the scheduler's entry points. Each takes the
+    # boundary it was enqueued for as `at` and re-checks it under a row lock.
+    update :end_phase_on_schedule do
+      description "Scheduler only: ends the current phase as of its recorded boundary `at`."
+      accept []
+      require_atomic? false
+
+      argument :at, :utc_datetime_usec, allow_nil?: false
+
+      change EndPhaseOnSchedule
+    end
+
+    update :hunter_deadline_on_schedule do
+      description "Scheduler only: shoots a random living player once the hunter's window closes at `at`."
+      accept []
+      require_atomic? false
+
+      argument :at, :utc_datetime_usec, allow_nil?: false
+
+      change HunterDeadlineOnSchedule
     end
 
     # The deadline is read against the window rather than any phase timer, so
@@ -274,6 +333,11 @@ defmodule WerewolfAsh.Games.Game do
   end
 
   policies do
+    # werewolf_ash-qss.9 rule 19 - the AshOban worker runs with no actor.
+    bypass AshOban.Checks.AshObanInteraction do
+      authorize_if always()
+    end
+
     # rule 1 - a game is readable only while the actor holds a seat in it,
     # any role, alive or dead. Read policies filter by default, so an actor
     # with no seat (or no actor at all) gets nothing back, never a hard
@@ -305,7 +369,9 @@ defmodule WerewolfAsh.Games.Game do
              :finish,
              :end_day,
              :end_night,
-             :resolve_hunter_deadline
+             :resolve_hunter_deadline,
+             :end_phase_on_schedule,
+             :hunter_deadline_on_schedule
            ]) do
       authorize_if always()
     end

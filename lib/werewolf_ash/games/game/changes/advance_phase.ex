@@ -8,6 +8,9 @@ defmodule WerewolfAsh.Games.Game.Changes.AdvancePhase do
   written, closes the open `Phase` and opens the next one in the same
   transaction. Every instant derives from the action's `:now` argument.
 
+  Also enqueues the one `:end_phase` job for the new `phase_ends_at`
+  (werewolf_ash-qss.9), in the same transaction.
+
   Resolution (votes, kills, win checks) is deliberately not here; later
   reactors run before this change hands the game to the next phase.
   """
@@ -18,6 +21,7 @@ defmodule WerewolfAsh.Games.Game.Changes.AdvancePhase do
   alias Ash.Context
   alias WerewolfAsh.Games
   alias WerewolfAsh.Games.Game.Clock
+  alias WerewolfAsh.Games.Game.ScheduledJobs
 
   @targets [:day, :night, :by_clock]
 
@@ -62,7 +66,8 @@ defmodule WerewolfAsh.Games.Game.Changes.AdvancePhase do
 
     with :ok <- close_phase(open_phase, now, opts),
          {:ok, _phase} <-
-           Games.create_phase(game.id, kind, (last_number || 0) + 1, %{started_at: now}, opts) do
+           Games.create_phase(game.id, kind, (last_number || 0) + 1, %{started_at: now}, opts),
+         {:ok, _job} <- ScheduledJobs.schedule_phase_end(game) do
       {:ok, game}
     end
   end
