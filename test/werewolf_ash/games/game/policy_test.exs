@@ -10,6 +10,7 @@ defmodule WerewolfAsh.Games.Game.PolicyTest do
 
   import WerewolfAsh.Generators
 
+  alias Ash.Changeset
   alias WerewolfAsh.Games
 
   describe "rule 1 - Game read policy" do
@@ -55,6 +56,26 @@ defmodule WerewolfAsh.Games.Game.PolicyTest do
 
       assert {:error, %Ash.Error.Invalid{}} =
                Games.get_game_by_join_code(game.join_code)
+    end
+  end
+
+  describe "rule 23 (werewolf_ash-qss.7) - every seated player reads the hunter window" do
+    test "a living, non-hunter seated player reads pending_hunter_id and hunter_deadline_at" do
+      game = generate(game())
+      hunter = generate(player(game_id: game.id, role: :hunter))
+      reader = generate(player(game_id: game.id, role: :villager))
+      deadline = DateTime.utc_now()
+
+      game
+      |> Changeset.for_update(:update, %{})
+      |> Changeset.force_change_attribute(:pending_hunter_id, hunter.id)
+      |> Changeset.force_change_attribute(:hunter_deadline_at, deadline)
+      |> Ash.update!()
+
+      seen = Games.get_game!(game.id, actor: %{id: reader.user_id})
+
+      assert seen.pending_hunter_id == hunter.id
+      assert DateTime.compare(seen.hunter_deadline_at, deadline) == :eq
     end
   end
 

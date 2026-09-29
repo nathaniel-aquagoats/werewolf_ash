@@ -41,10 +41,14 @@ defmodule WerewolfAsh.Games.ActionTest do
   # real `User` fetch.
   defp actor_for(player), do: %{id: player.user_id}
 
-  defp force_state(game, state) do
+  defp force_pending_hunter(game, hunter_id) do
     game
     |> Changeset.for_update(:update, %{})
-    |> Changeset.force_change_attribute(:state, state)
+    |> Changeset.force_change_attribute(:pending_hunter_id, hunter_id)
+    |> Changeset.force_change_attribute(
+      :hunter_deadline_at,
+      DateTime.add(DateTime.utc_now(), 3600, :second)
+    )
     |> Ash.update!()
   end
 
@@ -96,7 +100,7 @@ defmodule WerewolfAsh.Games.ActionTest do
 
     test "the pending hunter, already dead, can shoot", %{game: game, players: p} do
       Games.update_player!(p.hunter, %{alive: false})
-      game = force_state(game, :hunter_pending)
+      game = force_pending_hunter(game, p.hunter.id)
       day = current_phase(game)
 
       action =
@@ -285,8 +289,11 @@ defmodule WerewolfAsh.Games.ActionTest do
                )
     end
 
-    test "rejects a shot from anyone but the pending hunter (rule 7)", %{game: game, players: p} do
-      game = force_state(game, :hunter_pending)
+    test "rejects a shot from anyone but the pending hunter (rule 10)", %{
+      game: game,
+      players: p
+    } do
+      game = force_pending_hunter(game, p.hunter.id)
       day = current_phase(game)
 
       assert {:error, %Ash.Error.Invalid{errors: [%{field: :actor_id}]}} =
@@ -822,6 +829,115 @@ defmodule WerewolfAsh.Games.ActionTest do
     end
   end
 
+  describe "create_action/5 with :shoot (werewolf_ash-qss.7)" do
+    setup do
+      started_game()
+    end
+
+    test "kills the target immediately, a protected target included, and clears the window (rules 12, 14)",
+         %{game: game, players: p} do
+      day = current_phase(game)
+
+      Games.create_action!(day.id, p.bodyguard.id, p.villager.id, :protect,
+        actor: actor_for(p.bodyguard)
+      )
+
+      force_pending_hunter(game, p.hunter.id)
+
+      shot =
+        Games.create_action!(day.id, p.hunter.id, p.villager.id, :shoot,
+          actor: actor_for(p.hunter)
+        )
+
+      assert shot.result == %{"killed" => true}
+      assert Games.get_player!(p.villager.id, authorize?: false).alive == false
+
+      reloaded = Games.get_game!(game.id, authorize?: false)
+      assert is_nil(reloaded.pending_hunter_id)
+      assert is_nil(reloaded.hunter_deadline_at)
+    end
+
+    test "the win check runs after the shot and can finish the game (rule 13)", %{
+      game: game,
+      players: p
+    } do
+      day = current_phase(game)
+      Games.update_player!(p.bodyguard, %{alive: false})
+      Games.update_player!(p.seer, %{alive: false})
+      force_pending_hunter(game, p.hunter.id)
+
+      shot =
+        Games.create_action!(day.id, p.hunter.id, p.werewolf.id, :shoot,
+          actor: actor_for(p.hunter)
+        )
+
+      assert shot.result == %{"killed" => true}
+
+      reloaded = Games.get_game!(game.id, authorize?: false)
+      assert reloaded.state == :finished
+      assert reloaded.winner == :village
+    end
+
+    test "rejects a dead target on :target_id (rule 11)", %{game: game, players: p} do
+      day = current_phase(game)
+      Games.update_player!(p.villager, %{alive: false})
+      force_pending_hunter(game, p.hunter.id)
+
+      assert {:error, %Ash.Error.Invalid{errors: [%{field: :target_id}]}} =
+               Games.create_action(day.id, p.hunter.id, p.villager.id, :shoot,
+                 actor: actor_for(p.hunter)
+               )
+    end
+
+    test "rejects a target seated in another game on :target_id (werewolf_ash-qss.18 rules 2, 3)",
+         %{game: game, players: p} do
+      day = current_phase(game)
+      other_game = generate(game())
+      outsider = generate(player(game_id: other_game.id))
+      force_pending_hunter(game, p.hunter.id)
+
+      assert {:error, %Ash.Error.Invalid{errors: [%{field: :target_id}]}} =
+               Games.create_action(day.id, p.hunter.id, outsider.id, :shoot,
+                 actor: actor_for(p.hunter)
+               )
+    end
+
+    test "a living seated player who is neither the hunter nor the target still reads the :shoot row (rule 24)",
+         %{game: game, players: p} do
+      day = current_phase(game)
+      force_pending_hunter(game, p.hunter.id)
+
+      Games.create_action!(day.id, p.hunter.id, p.villager.id, :shoot, actor: actor_for(p.hunter))
+
+      visible =
+        Games.list_actions!(query: [filter: [type: :shoot]], actor: actor_for(p.bodyguard))
+
+      assert [%{actor_id: actor_id, target_id: target_id}] = visible
+      assert actor_id == p.hunter.id
+      assert target_id == p.villager.id
+    end
+
+    test "a second shot is refused, by the same or a different actor (rule 15)", %{
+      game: game,
+      players: p
+    } do
+      day = current_phase(game)
+      force_pending_hunter(game, p.hunter.id)
+
+      Games.create_action!(day.id, p.hunter.id, p.villager.id, :shoot, actor: actor_for(p.hunter))
+
+      assert {:error, %Ash.Error.Invalid{errors: [%{field: :actor_id}]}} =
+               Games.create_action(day.id, p.hunter.id, p.bodyguard.id, :shoot,
+                 actor: actor_for(p.hunter)
+               )
+
+      assert {:error, %Ash.Error.Invalid{errors: [%{field: :actor_id}]}} =
+               Games.create_action(day.id, p.villager.id, p.bodyguard.id, :shoot,
+                 actor: actor_for(p.villager)
+               )
+    end
+  end
+
   describe "end_night (werewolf_ash-qss.6)" do
     setup do
       %{game: game, players: p} = started_game()
@@ -879,6 +995,45 @@ defmodule WerewolfAsh.Games.ActionTest do
              |> Enum.all?(&(not is_nil(&1.ended_at)))
 
       refute is_nil(Games.get_phase!(night.id).ended_at)
+      assert is_nil(game.pending_hunter_id)
+    end
+
+    test "a hunter killed in the night gets the window at dawn (werewolf_ash-qss.7 rule 7)", %{
+      game: game,
+      players: p,
+      night: night
+    } do
+      Games.create_kill_action!(night.id, p.werewolf.id, p.hunter.id,
+        actor: actor_for(p.werewolf)
+      )
+
+      now = @dawn
+      game = Games.end_night!(game, %{now: now})
+
+      assert game.state == :day
+      assert game.pending_hunter_id == p.hunter.id
+      assert DateTime.compare(game.hunter_deadline_at, DateTime.add(now, 3600, :second)) == :eq
+    end
+
+    test "a hunter whose window was already used by a chosen shot never gets a second window at the next dawn",
+         %{game: game, players: p, night: night} do
+      Games.create_kill_action!(night.id, p.werewolf.id, p.hunter.id,
+        actor: actor_for(p.werewolf)
+      )
+
+      game = Games.end_night!(game, %{now: @dawn})
+
+      day2 = current_phase(game)
+
+      Games.create_action!(day2.id, p.hunter.id, p.villager.id, :shoot,
+        actor: actor_for(p.hunter)
+      )
+
+      game = Games.end_day!(game, %{now: ~U[2026-06-16 20:00:00Z]})
+      game = Games.end_night!(game, %{now: ~U[2026-06-17 08:00:00Z]})
+
+      assert is_nil(game.pending_hunter_id)
+      assert is_nil(game.hunter_deadline_at)
     end
   end
 
@@ -1117,7 +1272,7 @@ defmodule WerewolfAsh.Games.ActionTest do
       %{game: game, players: p} = started_game()
 
       Games.update_player!(p.hunter, %{alive: false})
-      game = force_state(game, :hunter_pending)
+      game = force_pending_hunter(game, p.hunter.id)
       day = current_phase(game)
 
       shot =
@@ -1131,6 +1286,122 @@ defmodule WerewolfAsh.Games.ActionTest do
                Games.create_action(day.id, p.villager.id, p.werewolf.id, :shoot,
                  actor: actor_for(p.villager)
                )
+    end
+  end
+
+  describe "end to end (werewolf_ash-qss.7)" do
+    test "dusk window: the hunter's own shot on the bodyguard cancels that day's protection, so the pack's kill on the protected player lands (rule 22)" do
+      %{game: game, players: p} = started_game()
+      day = current_phase(game)
+
+      Games.create_action!(day.id, p.bodyguard.id, p.villager.id, :protect,
+        actor: actor_for(p.bodyguard)
+      )
+
+      Games.create_action!(day.id, p.seer.id, p.hunter.id, :vote, actor: actor_for(p.seer))
+
+      Games.create_action!(day.id, p.villager.id, p.hunter.id, :vote,
+        actor: actor_for(p.villager)
+      )
+
+      game = Games.end_day!(game, %{now: @dusk})
+      night = current_phase(game)
+
+      assert game.state == :night
+      assert game.pending_hunter_id == p.hunter.id
+
+      seer_action =
+        Games.create_action!(night.id, p.seer.id, p.werewolf.id, :investigate,
+          actor: actor_for(p.seer)
+        )
+
+      assert seer_action.result == %{"is_werewolf" => true}
+
+      shot =
+        Games.create_action!(night.id, p.hunter.id, p.bodyguard.id, :shoot,
+          actor: actor_for(p.hunter)
+        )
+
+      assert shot.result == %{"killed" => true}
+      assert Games.get_player!(p.bodyguard.id, authorize?: false).alive == false
+      assert is_nil(Games.get_game!(game.id, authorize?: false).pending_hunter_id)
+
+      # rule 22 - the bodyguard who had protected the villager that day is
+      # now dead, so the pack's kill on the villager lands.
+      kill =
+        Games.create_kill_action!(night.id, p.werewolf.id, p.villager.id,
+          actor: actor_for(p.werewolf)
+        )
+
+      assert kill.result == %{"killed" => true}
+      assert Games.get_player!(p.villager.id, authorize?: false).alive == false
+    end
+
+    test "dusk window: an unused window is claimed at the deadline, killing the picked player with a fallback-flagged row" do
+      %{game: game, players: p} = started_game()
+      day = current_phase(game)
+
+      Games.create_action!(day.id, p.seer.id, p.hunter.id, :vote, actor: actor_for(p.seer))
+
+      Games.create_action!(day.id, p.villager.id, p.hunter.id, :vote,
+        actor: actor_for(p.villager)
+      )
+
+      now = @dusk
+      game = Games.end_day!(game, %{now: now})
+
+      assert game.pending_hunter_id == p.hunter.id
+      assert DateTime.compare(game.hunter_deadline_at, DateTime.add(now, 3600, :second)) == :eq
+
+      [expected | _] =
+        Games.list_living_players!(game.id, query: [sort: [id: :asc]], authorize?: false)
+
+      resolved = Games.resolve_hunter_deadline!(game, %{now: game.hunter_deadline_at, pick: 0})
+
+      assert Games.get_player!(expected.id, authorize?: false).alive == false
+      assert is_nil(resolved.pending_hunter_id)
+      assert is_nil(resolved.hunter_deadline_at)
+
+      assert [shot] = Games.list_actions!(query: [filter: [type: :shoot]], authorize?: false)
+      assert shot.actor_id == p.hunter.id
+      assert shot.target_id == expected.id
+      assert shot.result == %{"killed" => true, "fallback" => true}
+    end
+
+    test "dawn window: the hunter cannot shoot before dawn; the window opens at dawn, the hunter shoots, and a second end_night opens nothing" do
+      %{game: game, players: p} = started_game()
+      game = Games.end_day!(game, %{now: @dusk})
+      night = current_phase(game)
+
+      Games.create_kill_action!(night.id, p.werewolf.id, p.hunter.id,
+        actor: actor_for(p.werewolf)
+      )
+
+      assert is_nil(Games.get_game!(game.id, authorize?: false).pending_hunter_id)
+
+      assert {:error, %Ash.Error.Invalid{errors: [%{field: :actor_id}]}} =
+               Games.create_action(night.id, p.hunter.id, p.villager.id, :shoot,
+                 actor: actor_for(p.hunter)
+               )
+
+      game = Games.end_night!(game, %{now: @dawn})
+      day2 = current_phase(game)
+
+      assert game.state == :day
+      assert game.pending_hunter_id == p.hunter.id
+
+      shot =
+        Games.create_action!(day2.id, p.hunter.id, p.villager.id, :shoot,
+          actor: actor_for(p.hunter)
+        )
+
+      assert shot.result == %{"killed" => true}
+      assert is_nil(Games.get_game!(game.id, authorize?: false).pending_hunter_id)
+
+      game = Games.end_day!(game, %{now: ~U[2026-06-16 20:00:00Z]})
+      game = Games.end_night!(game, %{now: ~U[2026-06-17 08:00:00Z]})
+
+      assert is_nil(game.pending_hunter_id)
     end
   end
 end

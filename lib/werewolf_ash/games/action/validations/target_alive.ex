@@ -2,9 +2,9 @@ defmodule WerewolfAsh.Games.Action.Validations.TargetAlive do
   @moduledoc """
   Rejects an action whose target (`target_id`) is not currently alive
   (rule 1). Says nothing about `:type`: it runs wherever it is wired in —
-  guarded by `where:` for `:vote`/`:investigate`/`:protect` on `:create`,
-  unconditionally on `:kill` — never for `:shoot`, whose target-alive rule
-  is deferred to werewolf_ash-qss.7.
+  guarded by `where:` for `:vote`/`:investigate`/`:protect`/`:shoot` on
+  `:create` (werewolf_ash-qss.7 rule 11 adds `:shoot` to that guard),
+  unconditionally on `:kill`.
 
   Loads the `Player` unauthorized (`authorize?: false`), matching
   `ActorAlive`'s own stated reasoning: this is a game rule, not an access

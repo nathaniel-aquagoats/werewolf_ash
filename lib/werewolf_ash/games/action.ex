@@ -23,6 +23,7 @@ defmodule WerewolfAsh.Games.Action do
 
   alias WerewolfAsh.Games.Action.Actions.Withdraw
   alias WerewolfAsh.Games.Action.Changes.ApplyKill
+  alias WerewolfAsh.Games.Action.Changes.ApplyShot
   alias WerewolfAsh.Games.Action.Changes.RecordInvestigationResult
   alias WerewolfAsh.Games.Action.Changes.ResolveKillWin
   alias WerewolfAsh.Games.Action.Changes.UpsertChangeableTypes
@@ -62,9 +63,9 @@ defmodule WerewolfAsh.Games.Action do
       # that one instead).
       validate ActorAlive, where: [one_of(:type, [:vote, :investigate, :protect])]
 
-      # werewolf_ash-qss.18 rule 1 - the target must be alive too, except
-      # for :shoot (deferred to werewolf_ash-qss.7).
-      validate TargetAlive, where: [one_of(:type, [:vote, :investigate, :protect])]
+      # werewolf_ash-qss.18 rule 1, werewolf_ash-qss.7 rule 11 - the target
+      # must be alive too, :shoot included.
+      validate TargetAlive, where: [one_of(:type, [:vote, :investigate, :protect, :shoot])]
 
       # werewolf_ash-qss.18 rules 2, 3 - actor and target must both be
       # seated in the phase's game, for every type.
@@ -89,7 +90,8 @@ defmodule WerewolfAsh.Games.Action do
       # player two days in a row.
       validate NoConsecutiveProtect, where: [attribute_equals(:type, :protect)]
 
-      # rule 7 - a shot requires the actor to be the game's pending hunter.
+      # werewolf_ash-qss.7 rule 10 - a shot requires the actor to be the
+      # game's pending hunter.
       validate ShootRequiresPendingHunter, where: [attribute_equals(:type, :shoot)]
 
       # rule 4 - a :vote/:protect (first attempt or recast) is rejected once
@@ -103,6 +105,11 @@ defmodule WerewolfAsh.Games.Action do
 
       # rule 8 - the seer's answer is computed the instant the row is created.
       change RecordInvestigationResult
+
+      # werewolf_ash-qss.7 rules 12-14 - a landed shot's immediate effect:
+      # the kill (ignoring bodyguard protection entirely), the win check,
+      # and clearing the game's hunter window.
+      change ApplyShot, where: [attribute_equals(:type, :shoot)]
     end
 
     create :kill do
