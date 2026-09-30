@@ -10,16 +10,15 @@ defmodule WerewolfAsh.Games.Phase.Calculations.VoteTallyTest do
 
   use WerewolfAsh.DataCase, async: true
 
-  import WerewolfAsh.AnnouncementHelpers, only: [announce_death!: 1]
   import WerewolfAsh.Generators
-
-  defp actor_for(player), do: %{id: player.user_id}
 
   alias Ash.Resource.Calculation.Context
   alias WerewolfAsh.Games
   alias WerewolfAsh.Games.Phase
   alias WerewolfAsh.Games.Phase.Calculations.VoteTally
   alias WerewolfAsh.Games.Reactors.ResolveLynch
+
+  defp actor_for(player), do: %{id: player.user_id}
 
   defp context(actor, authorize? \\ true) do
     %Context{
@@ -143,8 +142,8 @@ defmodule WerewolfAsh.Games.Phase.Calculations.VoteTallyTest do
       vote!(day, voter_ok, target_a)
       vote!(day, voter_b, target_b)
 
-      announce_death!(Games.update_player!(voter_dead, %{alive: false}))
-      announce_death!(Games.update_player!(target_b, %{alive: false}))
+      Games.update_player!(voter_dead, %{alive: false})
+      Games.update_player!(target_b, %{alive: false})
       Games.update_player!(reader_dead, %{alive: false})
 
       [living_view] = VoteTally.calculate([day], [], context(actor_for(reader_living)))

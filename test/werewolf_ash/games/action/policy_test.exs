@@ -11,7 +11,6 @@ defmodule WerewolfAsh.Games.Action.PolicyTest do
 
   use WerewolfAsh.DataCase, async: true
 
-  import WerewolfAsh.AnnouncementHelpers, only: [announce_death!: 1]
   import WerewolfAsh.Generators
 
   alias WerewolfAsh.Games
@@ -202,8 +201,8 @@ defmodule WerewolfAsh.Games.Action.PolicyTest do
       to_dead_target =
         Games.create_action!(day_phase_id, voter2.id, dead_target.id, :vote, authorize?: false)
 
-      announce_death!(Games.update_player!(dead_voter, %{alive: false}))
-      announce_death!(Games.update_player!(dead_target, %{alive: false}))
+      Games.update_player!(dead_voter, %{alive: false})
+      Games.update_player!(dead_target, %{alive: false})
 
       # ctx.wolf is a third-party living reader, neither vote's own voter.
       assert {:error, %Ash.Error.Invalid{}} =

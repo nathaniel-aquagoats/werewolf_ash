@@ -1,7 +1,6 @@
 defmodule WerewolfAsh.GamesTest do
   use WerewolfAsh.DataCase, async: true
 
-  import WerewolfAsh.AnnouncementHelpers, only: [announce_death!: 1]
   import WerewolfAsh.Generators
 
   alias Ash.Changeset
@@ -1207,8 +1206,8 @@ defmodule WerewolfAsh.GamesTest do
       vote!(day, voter_bad, target_ok)
       vote!(day, voter_bad2, target_bad_only)
 
-      announce_death!(Games.update_player!(voter_bad, %{alive: false}))
-      announce_death!(Games.update_player!(voter_bad2, %{alive: false}))
+      Games.update_player!(voter_bad, %{alive: false})
+      Games.update_player!(voter_bad2, %{alive: false})
       Games.update_player!(dead_reader, %{alive: false})
 
       living_view =
@@ -1242,7 +1241,7 @@ defmodule WerewolfAsh.GamesTest do
       other_living = generate(player(game_id: game.id, role: :villager))
 
       vote!(day, voter, target)
-      announce_death!(Games.update_player!(voter, %{alive: false}))
+      Games.update_player!(voter, %{alive: false})
 
       other_view =
         Games.get_phase!(day.id, load: :vote_tally, actor: actor_for(other_living)).vote_tally
@@ -1265,7 +1264,7 @@ defmodule WerewolfAsh.GamesTest do
       dead_reader = generate(player(game_id: game.id, role: :villager))
 
       vote!(day, voter, target)
-      announce_death!(Games.update_player!(target, %{alive: false}))
+      Games.update_player!(target, %{alive: false})
       Games.update_player!(dead_reader, %{alive: false})
 
       other_view =

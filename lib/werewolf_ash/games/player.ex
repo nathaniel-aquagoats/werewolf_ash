@@ -22,17 +22,12 @@ defmodule WerewolfAsh.Games.Player do
   graphql do
     type :player
 
-    # qss.19 rule 20 - the stored flag stays hidden; GraphQL's `alive` is the
-    # visible_alive calculation, and death_announced_at is private.
-    hide_fields [:alive]
-    field_names visible_alive: :alive
-
     # rule 3 - user_id is exposed as a field and as the user relationship,
     # but never as a query/filter input named userId.
     filterable_fields [
       :id,
       :role,
-      :visible_alive,
+      :alive,
       :joined_at,
       :game_id,
       :game,
@@ -228,24 +223,6 @@ defmodule WerewolfAsh.Games.Player do
     has_many :targeted_by_actions, WerewolfAsh.Games.Action do
       public? true
       destination_attribute :target_id
-    end
-  end
-
-  calculations do
-    # qss.19 rule 19 - alive as the reader may see it: a night victim still
-    # reads alive to a living non-wolf until their death is announced.
-    calculate :visible_alive,
-              :boolean,
-              expr(
-                alive or
-                  (is_nil(death_announced_at) and game.state != :finished and
-                     exists(
-                       game.players,
-                       user_id == ^actor(:id) and alive and
-                         (is_nil(role) or role != :werewolf)
-                     ))
-              ) do
-      public? true
     end
   end
 

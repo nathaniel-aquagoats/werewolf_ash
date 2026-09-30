@@ -653,26 +653,10 @@ type Phase {
 enum PlayerSortField {
   ID
   ROLE
+  ALIVE
   JOINED_AT
   USER_ID
   GAME_ID
-  ALIVE
-}
-
-input PlayerFilterAlive {
-  isNil: Boolean
-  eq: Boolean
-  notEq: Boolean
-  in: [Boolean!]
-  lessThan: Boolean
-  greaterThan: Boolean
-  lessThanOrEqual: Boolean
-  greaterThanOrEqual: Boolean
-  isDistinctFrom: Boolean
-  isNotDistinctFrom: Boolean
-  rangeAdjacent: Boolean
-  rangeContains: String
-  rangeOverlaps: Boolean
 }
 
 input PlayerFilterGameId {
@@ -705,6 +689,22 @@ input PlayerFilterJoinedAt {
   rangeAdjacent: DateTime
   rangeContains: String
   rangeOverlaps: DateTime
+}
+
+input PlayerFilterAlive {
+  isNil: Boolean
+  eq: Boolean
+  notEq: Boolean
+  in: [Boolean!]
+  lessThan: Boolean
+  greaterThan: Boolean
+  lessThanOrEqual: Boolean
+  greaterThanOrEqual: Boolean
+  isDistinctFrom: Boolean
+  isNotDistinctFrom: Boolean
+  rangeAdjacent: Boolean
+  rangeContains: String
+  rangeOverlaps: Boolean
 }
 
 input PlayerFilterRole {
@@ -751,6 +751,8 @@ input PlayerFilterInput {
   "Assigned when the game starts; nil while in the lobby."
   role: PlayerFilterRole
 
+  alive: PlayerFilterAlive
+
   joinedAt: PlayerFilterJoinedAt
 
   gameId: PlayerFilterGameId
@@ -760,8 +762,6 @@ input PlayerFilterInput {
   performedActions: ActionFilterInput
 
   targetedByActions: ActionFilterInput
-
-  alive: PlayerFilterAlive
 }
 
 input PlayerSortInput {
@@ -774,6 +774,8 @@ type Player {
 
   "Assigned when the game starts; nil while in the lobby."
   role: String
+
+  alive: Boolean!
 
   joinedAt: DateTime!
 
@@ -812,8 +814,6 @@ type Player {
     "The number of records to skip."
     offset: Int
   ): [Action!]!
-
-  alive: Boolean
 }
 
 "The result of the :update_game_settings mutation"

@@ -50,7 +50,7 @@ defmodule WerewolfAsh.Games.AnnouncementsEndToEndTest do
   end
 
   defp read(target, reader) do
-    Ash.get!(Player, target.id, load: :visible_alive, actor: actor_for(reader))
+    Ash.get!(Player, target.id, actor: actor_for(reader))
   end
 
   defp kinds(game, reader) do
@@ -65,7 +65,7 @@ defmodule WerewolfAsh.Games.AnnouncementsEndToEndTest do
     Games.create_kill_action!(night.id, ctx.wolf.id, ctx.victim.id, actor: actor_for(ctx.wolf))
 
     before_dawn = read(ctx.victim, ctx.villager)
-    assert before_dawn.visible_alive
+    refute before_dawn.alive
     assert %ForbiddenField{} = before_dawn.role
     assert kinds(ctx.game, ctx.villager) == [:dusk]
 
@@ -78,7 +78,7 @@ defmodule WerewolfAsh.Games.AnnouncementsEndToEndTest do
     assert id == ctx.victim.id
 
     after_dawn = read(ctx.victim, ctx.villager)
-    refute after_dawn.visible_alive
+    refute after_dawn.alive
     assert after_dawn.role == :villager
 
     # the day: the village lynches the wolf's frame-up target

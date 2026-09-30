@@ -8,7 +8,6 @@ defmodule WerewolfAshWeb.Graphql.GamesVisibilityTest do
 
   use WerewolfAshWeb.ConnCase, async: false
 
-  import WerewolfAsh.AnnouncementHelpers, only: [announce_death!: 1]
   import WerewolfAsh.Generators
   import WerewolfAsh.GraphqlHelpers
 
@@ -256,7 +255,7 @@ defmodule WerewolfAshWeb.Graphql.GamesVisibilityTest do
 
       Games.create_action!(day.id, villager.seat.id, werewolf.seat.id, :vote, authorize?: false)
       Games.create_action!(day.id, seer.seat.id, werewolf.seat.id, :vote, authorize?: false)
-      announce_death!(Games.update_player!(seer.seat, %{alive: false}))
+      Games.update_player!(seer.seat, %{alive: false})
 
       living_response = gql(villager.conn, @vote_tally_query, %{"id" => game.id})
       living_tally = fetch_vote_tally(living_response, day.id)

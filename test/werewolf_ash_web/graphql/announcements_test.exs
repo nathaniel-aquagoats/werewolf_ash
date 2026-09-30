@@ -1,7 +1,7 @@
 defmodule WerewolfAshWeb.Graphql.AnnouncementsTest do
   @moduledoc """
-  werewolf_ash-qss.19 rules 20, 22-24 over GraphQL: the `announcements`
-  query, `Player.alive` as the reader sees it, and the schema shape.
+  werewolf_ash-qss.19 rules 19-21 over GraphQL: the `announcements`
+  query, what a wolf kill shows before dawn, and the schema shape.
   """
 
   use WerewolfAshWeb.ConnCase, async: false
@@ -33,7 +33,7 @@ defmodule WerewolfAshWeb.Graphql.AnnouncementsTest do
 
   @players_query """
   query G($id: ID!) {
-    game(id: $id) { mySeat { id alive } players { id alive role } }
+    game(id: $id) { players { id alive role } }
   }
   """
 
@@ -136,42 +136,24 @@ defmodule WerewolfAshWeb.Graphql.AnnouncementsTest do
     end
   end
 
-  describe "Player.alive and role as the reader sees them (rule 20)" do
-    test "a living villager sees the night victim alive and role hidden until dawn, then dead with the role" do
+  describe "a wolf kill before dawn (rule 19)" do
+    test "alive is already false for every reader, the role is hidden from a villager until dawn" do
       ctx = night_with_victim()
       vars = %{"id" => ctx.game.id}
 
+      for who <- [ctx.villager, ctx.victim, ctx.wolf] do
+        assert alive_of(gql(who.conn, @players_query, vars), ctx.victim.seat.id) == false
+      end
+
       before = gql(ctx.villager.conn, @players_query, vars)
-      assert alive_of(before, ctx.victim.seat.id) == true
       victim = Enum.find(before["data"]["game"]["players"], &(&1["id"] == ctx.victim.seat.id))
       assert victim["role"] == nil
 
       Games.end_night!(ctx.game, %{now: @dawn}, authorize?: false)
 
       after_dawn = gql(ctx.villager.conn, @players_query, vars)
-      assert alive_of(after_dawn, ctx.victim.seat.id) == false
       victim = Enum.find(after_dawn["data"]["game"]["players"], &(&1["id"] == ctx.victim.seat.id))
       assert victim["role"] == "villager"
-    end
-
-    test "the victim and a wolf see the truth before dawn" do
-      ctx = night_with_victim()
-      vars = %{"id" => ctx.game.id}
-
-      for who <- [ctx.victim, ctx.wolf] do
-        assert alive_of(gql(who.conn, @players_query, vars), ctx.victim.seat.id) == false
-      end
-    end
-
-    test "mySeat { alive } follows the same rule" do
-      ctx = night_with_victim()
-      vars = %{"id" => ctx.game.id}
-
-      assert gql(ctx.victim.conn, @players_query, vars)["data"]["game"]["mySeat"]["alive"] ==
-               false
-
-      assert gql(ctx.villager.conn, @players_query, vars)["data"]["game"]["mySeat"]["alive"] ==
-               true
     end
   end
 
@@ -185,14 +167,13 @@ defmodule WerewolfAshWeb.Graphql.AnnouncementsTest do
     }
     """
 
-    test "Player.alive takes no argument, deathAnnouncedAt is absent, no announcement mutation" do
+    test "Player.alive is the stored field, deathAnnouncedAt is absent, no announcement mutation" do
       {:ok, %{data: %{"__schema" => schema}}} = Absinthe.run(@introspection, GraphqlSchema)
       player = Enum.find(schema["types"], &(&1["name"] == "Player"))
       field_names = Enum.map(player["fields"], & &1["name"])
 
       assert "alive" in field_names
       refute "deathAnnouncedAt" in field_names
-      refute "visibleAlive" in field_names
       assert Enum.find(player["fields"], &(&1["name"] == "alive"))["args"] == []
 
       mutation_names = Enum.map(schema["mutationType"]["fields"], & &1["name"])
