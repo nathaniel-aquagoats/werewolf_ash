@@ -4,6 +4,7 @@ defmodule WerewolfAsh.Games.Game.Changes.EndPhaseOnScheduleTest do
   import WerewolfAsh.GameClockHelpers
   import WerewolfAsh.Generators
 
+  alias Ash.Changeset
   alias Ash.Error
   alias AshOban.Errors.SnoozeJob
   alias WerewolfAsh.Games
@@ -82,5 +83,17 @@ defmodule WerewolfAsh.Games.Game.Changes.EndPhaseOnScheduleTest do
 
     assert [%{ended_at: nil}] = phases(game)
     assert Games.get_game!(game.id, authorize?: false).state == :day
+  end
+
+  test "both scheduler actions are open to any actor, as end_day is (rule 19)" do
+    %{game: game} = running_game()
+    stranger = generate(user())
+
+    for action <- [:end_phase_on_schedule, :hunter_deadline_on_schedule] do
+      assert {:ok, _} =
+               game
+               |> Changeset.for_update(action, %{at: @night_end}, actor: stranger)
+               |> Ash.update(actor: stranger)
+    end
   end
 end

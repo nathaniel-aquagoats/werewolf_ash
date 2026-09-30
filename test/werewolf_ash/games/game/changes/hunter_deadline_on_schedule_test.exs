@@ -4,9 +4,12 @@ defmodule WerewolfAsh.Games.Game.Changes.HunterDeadlineOnScheduleTest do
   import WerewolfAsh.GameClockHelpers
   import WerewolfAsh.Generators
 
+  alias Ash.Changeset
   alias Ash.Error
+  alias Ash.UUID
   alias AshOban.Errors.SnoozeJob
   alias WerewolfAsh.Games
+  alias WerewolfAsh.Games.Game.HunterWindow
 
   @deadline ~U[2026-06-15 15:00:00.000000Z]
 
@@ -56,5 +59,53 @@ defmodule WerewolfAsh.Games.Game.Changes.HunterDeadlineOnScheduleTest do
     assert {:error, error} = run_hunter_deadline(game, ends_at)
     assert Enum.any?(Error.to_error_class(error).errors, &match?(%SnoozeJob{}, &1))
     assert shots() == []
+  end
+
+  test "snoozes when the phase boundary is strictly earlier than the deadline" do
+    %{game: game} = running_game()
+    deadline = DateTime.add(game.phase_ends_at, 3600, :second)
+    game = open_window(game, deadline)
+
+    assert {:error, error} = run_hunter_deadline(game, deadline)
+    assert Enum.any?(Error.to_error_class(error).errors, &match?(%SnoozeJob{}, &1))
+    assert shots() == []
+  end
+
+  test "uses the recorded deadline as now, not the wall clock (a future deadline still shoots)" do
+    %{game: game} = running_game()
+    deadline = ~U[2099-01-01 00:00:00.000000Z]
+
+    game =
+      game
+      |> Changeset.for_update(:update, %{})
+      |> Changeset.force_change_attribute(:phase_ends_at, ~U[2100-01-01 00:00:00.000000Z])
+      |> Ash.update!()
+      |> open_window(deadline)
+
+    assert {:ok, resolved} = run_hunter_deadline(game, deadline)
+
+    assert is_nil(resolved.pending_hunter_id)
+    assert [%{result: %{"fallback" => true}}] = shots()
+  end
+
+  test "a lobby game with an open window is a no-op (the state guard, rule 12)" do
+    lobby = generate(game())
+    {:ok, opened} = HunterWindow.open(lobby, UUID.generate(), @deadline, authorize?: false)
+
+    assert {:ok, %{state: :lobby}} = run_hunter_deadline(opened, opened.hunter_deadline_at)
+    assert shots() == []
+  end
+
+  test "a failing shot rolls back and errors, leaving the window open (rule 13)" do
+    %{game: game} = running_game()
+    game = open_window(game, @deadline)
+
+    Repo.update_all(from(p in "players", where: p.game_id == type(^game.id, :binary_id)),
+      set: [alive: false]
+    )
+
+    assert {:error, _} = run_hunter_deadline(game, @deadline)
+    assert %{pending_hunter_id: id} = Games.get_game!(game.id, authorize?: false)
+    assert id == game.pending_hunter_id
   end
 end

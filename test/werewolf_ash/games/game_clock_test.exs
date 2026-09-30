@@ -111,7 +111,35 @@ defmodule WerewolfAsh.Games.GameClockTest do
 
       assert {:ok, _} = perform_job(HunterDeadline, hunter_job.args)
       # the random fallback shot may itself end the game, so only the snooze is asserted
-      refute match?({:snooze, _}, perform_job(EndPhase, phase_job.args))
+      result = perform_job(EndPhase, phase_job.args)
+      assert match?({:ok, _}, result) or match?({:cancel, :trigger_no_longer_applies}, result)
+    end
+  end
+
+  describe "hunter job and dusk win" do
+    test "a hunter job for a game whose window was cleared is cancelled as no longer applying" do
+      %{game: game} = running_game()
+      game = open_window(game, ~U[2026-06-15 15:00:00.000000Z])
+      {:ok, _} = ScheduledJobs.schedule_hunter_deadline(game)
+      [job] = jobs(HunterDeadline)
+      {:ok, _} = HunterWindow.clear(game, authorize?: false)
+
+      assert {:cancel, :trigger_no_longer_applies} = perform_job(HunterDeadline, job.args)
+    end
+
+    test "a win at dusk leaves no pending job" do
+      %{game: game} = running_game()
+
+      game.id
+      |> Games.list_living_players!(authorize?: false)
+      |> Enum.filter(&(&1.role == :werewolf))
+      |> Enum.each(&Games.update_player!(&1, %{alive: false}, authorize?: false))
+
+      finished = Games.end_day!(game, %{now: @day_end})
+
+      assert finished.state == :finished
+      assert jobs(EndPhase) == []
+      assert jobs(HunterDeadline) == []
     end
   end
 

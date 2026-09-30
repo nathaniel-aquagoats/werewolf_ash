@@ -4,6 +4,8 @@ defmodule WerewolfAsh.Games.Game.ScheduledJobsTest do
   import WerewolfAsh.Generators
 
   alias Ash.Changeset
+  alias AshOban.Info
+  alias WerewolfAsh.Games.Game
   alias WerewolfAsh.Games.Game.ScheduledJobs
   alias WerewolfAsh.Games.Game.Workers.EndPhase
   alias WerewolfAsh.Games.Game.Workers.HunterDeadline
@@ -100,6 +102,19 @@ defmodule WerewolfAsh.Games.Game.ScheduledJobsTest do
     test "both workers allow effectively unlimited attempts" do
       assert EndPhase.new(%{}).changes.max_attempts == 1_000_000
       assert HunterDeadline.new(%{}).changes.max_attempts == 1_000_000
+    end
+  end
+
+  describe "configuration" do
+    test "neither trigger has a scheduler (no cron, no sweeper)" do
+      for name <- [:end_phase, :hunter_deadline] do
+        assert Info.oban_trigger(Game, name).scheduler_cron == false
+      end
+    end
+
+    test "the lifeline rescues stuck jobs after 5 minutes" do
+      assert Application.fetch_env!(:werewolf_ash, Oban)[:lifeline][:rescue_after] ==
+               {5, :minutes}
     end
   end
 end
