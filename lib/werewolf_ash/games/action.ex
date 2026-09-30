@@ -26,6 +26,7 @@ defmodule WerewolfAsh.Games.Action do
   alias WerewolfAsh.Games.Action.Actions.CastKill
   alias WerewolfAsh.Games.Action.Actions.Withdraw
   alias WerewolfAsh.Games.Action.Actions.WithdrawOwn
+  alias WerewolfAsh.Games.Action.Changes.AnnounceShot
   alias WerewolfAsh.Games.Action.Changes.ApplyKill
   alias WerewolfAsh.Games.Action.Changes.ApplyShot
   alias WerewolfAsh.Games.Action.Changes.RecordInvestigationResult
@@ -123,6 +124,9 @@ defmodule WerewolfAsh.Games.Action do
       # the kill (ignoring bodyguard protection entirely), the win check,
       # and clearing the game's hunter window.
       change ApplyShot, where: [attribute_equals(:type, :shoot)]
+
+      # qss.19 rule 13 - the shot is announced at once.
+      change AnnounceShot, where: [attribute_equals(:type, :shoot)]
     end
 
     create :kill do

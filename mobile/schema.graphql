@@ -3,6 +3,12 @@ schema {
   query: RootQueryType
 }
 
+type AnnouncedDeath {
+  playerId: ID!
+  role: String
+  cause: String!
+}
+
 "The result of the :set_name mutation"
 type SetNameResult {
   "The successful result of the mutation"
@@ -136,6 +142,159 @@ type MutationError {
 
   "The path to the field that produced the error"
   path: [String!]
+}
+
+enum AnnouncementSortField {
+  ID
+  KIND
+  ANNOUNCED_AT
+  WINNER
+  LYNCH_OUTCOME
+  NIGHT_STARTING
+  GAME_ID
+}
+
+input AnnouncementFilterGameId {
+  isNil: Boolean
+  eq: ID
+  notEq: ID
+  in: [ID!]
+  lessThan: ID
+  greaterThan: ID
+  lessThanOrEqual: ID
+  greaterThanOrEqual: ID
+  isDistinctFrom: ID
+  isNotDistinctFrom: ID
+  rangeAdjacent: ID
+  rangeContains: String
+  rangeOverlaps: ID
+}
+
+input AnnouncementFilterNightStarting {
+  isNil: Boolean
+  eq: Boolean
+  notEq: Boolean
+  in: [Boolean!]
+  lessThan: Boolean
+  greaterThan: Boolean
+  lessThanOrEqual: Boolean
+  greaterThanOrEqual: Boolean
+  isDistinctFrom: Boolean
+  isNotDistinctFrom: Boolean
+  rangeAdjacent: Boolean
+  rangeContains: String
+  rangeOverlaps: Boolean
+}
+
+input AnnouncementFilterLynchOutcome {
+  isNil: Boolean
+  eq: String
+  notEq: String
+  in: [String]
+  lessThan: String
+  greaterThan: String
+  lessThanOrEqual: String
+  greaterThanOrEqual: String
+  isDistinctFrom: String
+  isNotDistinctFrom: String
+  rangeAdjacent: String
+  rangeContains: String
+  rangeOverlaps: String
+}
+
+input AnnouncementFilterWinner {
+  isNil: Boolean
+  eq: String
+  notEq: String
+  in: [String]
+  lessThan: String
+  greaterThan: String
+  lessThanOrEqual: String
+  greaterThanOrEqual: String
+  isDistinctFrom: String
+  isNotDistinctFrom: String
+  rangeAdjacent: String
+  rangeContains: String
+  rangeOverlaps: String
+}
+
+input AnnouncementFilterAnnouncedAt {
+  isNil: Boolean
+  eq: DateTime
+  notEq: DateTime
+  in: [DateTime!]
+  lessThan: DateTime
+  greaterThan: DateTime
+  lessThanOrEqual: DateTime
+  greaterThanOrEqual: DateTime
+  isDistinctFrom: DateTime
+  isNotDistinctFrom: DateTime
+  rangeAdjacent: DateTime
+  rangeContains: String
+  rangeOverlaps: DateTime
+}
+
+input AnnouncementFilterKind {
+  isNil: Boolean
+  eq: String
+  notEq: String
+  in: [String!]
+  lessThan: String
+  greaterThan: String
+  lessThanOrEqual: String
+  greaterThanOrEqual: String
+  isDistinctFrom: String
+  isNotDistinctFrom: String
+  rangeAdjacent: String
+  rangeContains: String
+  rangeOverlaps: String
+}
+
+input AnnouncementFilterId {
+  isNil: Boolean
+  eq: ID
+  notEq: ID
+  in: [ID!]
+  lessThan: ID
+  greaterThan: ID
+  lessThanOrEqual: ID
+  greaterThanOrEqual: ID
+  isDistinctFrom: ID
+  isNotDistinctFrom: ID
+  rangeAdjacent: ID
+  rangeContains: String
+  rangeOverlaps: ID
+}
+
+input AnnouncementFilterInput {
+  and: [AnnouncementFilterInput!]
+  or: [AnnouncementFilterInput!]
+  not: [AnnouncementFilterInput!]
+  id: AnnouncementFilterId
+  kind: AnnouncementFilterKind
+  announcedAt: AnnouncementFilterAnnouncedAt
+  winner: AnnouncementFilterWinner
+  lynchOutcome: AnnouncementFilterLynchOutcome
+  nightStarting: AnnouncementFilterNightStarting
+  gameId: AnnouncementFilterGameId
+  game: GameFilterInput
+}
+
+input AnnouncementSortInput {
+  order: SortOrder
+  field: AnnouncementSortField!
+}
+
+type Announcement {
+  id: ID!
+  kind: String!
+  announcedAt: DateTime!
+  deaths: [AnnouncedDeath!]!
+  winner: String
+  lynchOutcome: String
+  nightStarting: Boolean!
+  gameId: ID!
+  game: Game!
 }
 
 "The result of the :withdraw_protection mutation"
@@ -1221,6 +1380,17 @@ type RootQueryType {
     "A filter to limit the results"
     filter: GameFilterInput
   ): [Game!]!
+
+  "Every announcement of one game, in the order they were made, game over last."
+  announcements(
+    "How to sort the records in the response"
+    sort: [AnnouncementSortInput]
+
+    "A filter to limit the results"
+    filter: AnnouncementFilterInput
+
+    gameId: ID!
+  ): [Announcement!]!
 
   "The user identified by the request's bearer token, if any."
   currentUser(

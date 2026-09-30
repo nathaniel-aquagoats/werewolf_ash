@@ -18,6 +18,9 @@ defmodule WerewolfAsh.Games do
 
       # rule 7 - myGames: no pagination arguments.
       list WerewolfAsh.Games.Game, :my_games, :mine
+
+      # qss.19 rule 23 - announcements(gameId): a non-member gets [].
+      list WerewolfAsh.Games.Announcement, :announcements, :in_game
     end
 
     mutations do
@@ -113,6 +116,7 @@ defmodule WerewolfAsh.Games do
       define :add_player, action: :create, args: [:game_id, :user_id]
       define :join_game, action: :join, args: [:join_code, :user_id]
       define :update_player, action: :update
+      define :mark_death_announced, action: :mark_death_announced
       define :remove_player, action: :destroy
       define :get_player, action: :read, get_by: [:id]
       define :list_players, action: :read
@@ -143,6 +147,11 @@ defmodule WerewolfAsh.Games do
       define :cast_shot, action: :cast_shot, args: [:game_id, :target_id]
       define :withdraw_own_vote, action: :withdraw_own_vote, args: [:game_id]
       define :withdraw_own_protection, action: :withdraw_own_protection, args: [:game_id]
+    end
+
+    resource WerewolfAsh.Games.Announcement do
+      define :create_announcement, action: :announce
+      define :list_announcements, action: :in_game, args: [:game_id]
     end
 
     resource WerewolfAsh.Games.Message do

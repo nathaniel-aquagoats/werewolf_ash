@@ -61,6 +61,13 @@ defmodule WerewolfAsh.Games.Player do
       authorize_if expr(game.state == :finished)
 
       authorize_if expr(exists(game.players, user_id == ^actor(:id) and not alive))
+
+      # qss.19 rule 18 - any seat of the game, once the player's death is
+      # announced.
+      authorize_if expr(
+                     not is_nil(death_announced_at) and
+                       exists(game.players, user_id == ^actor(:id))
+                   )
     end
 
     field_policy :* do
@@ -101,6 +108,15 @@ defmodule WerewolfAsh.Games.Player do
     update :update do
       primary? true
       accept [:role, :alive]
+    end
+
+    # qss.19 rule 6 - the private announced mark, set only by Announcer.
+    update :mark_death_announced do
+      accept []
+
+      argument :at, :utc_datetime_usec, allow_nil?: false
+
+      change set_attribute(:death_announced_at, arg(:at))
     end
 
     destroy :destroy do
@@ -149,7 +165,7 @@ defmodule WerewolfAsh.Games.Player do
     end
 
     # rule 6 - every write action stays exactly as open as it is today.
-    policy action([:create, :join, :update, :destroy]) do
+    policy action([:create, :join, :update, :mark_death_announced, :destroy]) do
       authorize_if always()
     end
 
@@ -179,6 +195,10 @@ defmodule WerewolfAsh.Games.Player do
       allow_nil? false
       public? true
       default &DateTime.utc_now/0
+    end
+
+    attribute :death_announced_at, :utc_datetime_usec do
+      description "Private. Set when an announcement lists this player's death."
     end
 
     timestamps()
