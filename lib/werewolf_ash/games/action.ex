@@ -26,6 +26,7 @@ defmodule WerewolfAsh.Games.Action do
   alias WerewolfAsh.Games.Action.Actions.CastKill
   alias WerewolfAsh.Games.Action.Actions.Withdraw
   alias WerewolfAsh.Games.Action.Actions.WithdrawOwn
+  alias WerewolfAsh.Games.Action.Changes.AnnounceShot
   alias WerewolfAsh.Games.Action.Changes.ApplyKill
   alias WerewolfAsh.Games.Action.Changes.ApplyShot
   alias WerewolfAsh.Games.Action.Changes.RecordInvestigationResult
@@ -78,7 +79,11 @@ defmodule WerewolfAsh.Games.Action do
 
       # werewolf_ash-qss.18 rule 1, werewolf_ash-qss.7 rule 11 - the target
       # must be alive too, :shoot included.
-      validate TargetAlive, where: [one_of(:type, [:vote, :investigate, :protect, :shoot])]
+      validate TargetAlive, where: [one_of(:type, [:vote, :protect, :shoot])]
+
+      # qss.19 rules 25-26 - only the seer's investigation may target an
+      # unannounced victim of this night's landed kill.
+      validate {TargetAlive, night_victim?: true}, where: [attribute_equals(:type, :investigate)]
 
       # werewolf_ash-qss.18 rules 2, 3 - actor and target must both be
       # seated in the phase's game, for every type.
@@ -123,6 +128,9 @@ defmodule WerewolfAsh.Games.Action do
       # the kill (ignoring bodyguard protection entirely), the win check,
       # and clearing the game's hunter window.
       change ApplyShot, where: [attribute_equals(:type, :shoot)]
+
+      # qss.19 rule 13 - the shot is announced at once.
+      change AnnounceShot, where: [attribute_equals(:type, :shoot)]
     end
 
     create :kill do
@@ -249,7 +257,8 @@ defmodule WerewolfAsh.Games.Action do
     # row's own actor (the seer who cast it); a :protect row is narrowed
     # the same way, to the bodyguard who cast it; a :vote row is readable
     # to a living reader only while it currently counts (its voter and its
-    # target both alive) or it is the reader's own seat's vote. :shoot rows
+    # target both publicly alive (alive, or dead but not yet announced -
+    # qss.19 rule 21) or it is the reader's own seat's vote. :shoot rows
     # stay readable to every living seated reader unconditionally. None of
     # these narrowings apply once the reading actor's own seat in that game
     # is dead - a dead reader sees every row, cast by or aimed at anyone.
@@ -260,7 +269,8 @@ defmodule WerewolfAsh.Games.Action do
                           (type == :shoot or
                              (type == :vote and
                                 (actor.user_id == ^actor(:id) or
-                                   (actor.alive and target.alive))) or
+                                   ((actor.alive or is_nil(actor.death_announced_at)) and
+                                      (target.alive or is_nil(target.death_announced_at))))) or
                              (type == :kill and
                                 exists(
                                   phase.game.players,

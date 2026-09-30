@@ -94,13 +94,18 @@ defmodule WerewolfAsh.Games.Phase.Calculations.VoteTally do
       |> Enum.flat_map(fn {target_id, voter_ids} -> Enum.map(voter_ids, &{target_id, &1}) end)
       |> MapSet.new()
 
+    # qss.19 rule 21 - `public` is "publicly alive": alive, or dead but not
+    # yet announced, for voter and target both. Internal; never output.
     Enum.group_by(votes, & &1.target_id, fn vote ->
       %{
         voter_id: vote.actor_id,
-        counts: MapSet.member?(counting_pairs, {vote.target_id, vote.actor_id})
+        counts: MapSet.member?(counting_pairs, {vote.target_id, vote.actor_id}),
+        public: publicly_alive?(vote.actor) and publicly_alive?(vote.target)
       }
     end)
   end
+
+  defp publicly_alive?(player), do: player.alive or is_nil(player.death_announced_at)
 
   # Rule 10: which view a reader gets is decided once, by their own seat in
   # the phase's game — never by anything about the individual votes. No seat
@@ -119,19 +124,27 @@ defmodule WerewolfAsh.Games.Phase.Calculations.VoteTally do
   end
 
   # Rule 9: a dead reader's view is rule 1's map, entirely unfiltered.
-  defp narrow(entries, :dead), do: entries
+  defp narrow(entries, :dead) do
+    Map.new(entries, fn {target_id, details} ->
+      {target_id, Enum.map(details, &Map.delete(&1, :public))}
+    end)
+  end
 
   # Rules 5, 10: no seat at all (including no actor) is always `%{}`, never a
   # fabricated view.
   defp narrow(_entries, :none), do: %{}
 
-  # Rule 4: a living reader keeps only `counts: true` entries, plus their own
-  # entry even when it is `counts: false` — dropping a target left with no
+  # Rule 4, amended by qss.19 rule 21: a living reader keeps only publicly
+  # alive entries (output as `counts`, so an unannounced night death still
+  # reads as counting), plus their own entry — dropping a target left with no
   # entries at all under that combined narrowing entirely, as a key.
   defp narrow(entries, {:living, player_id}) do
     entries
     |> Map.new(fn {target_id, details} ->
-      {target_id, Enum.filter(details, &(&1.counts or &1.voter_id == player_id))}
+      {target_id,
+       details
+       |> Enum.filter(&(&1.public or &1.voter_id == player_id))
+       |> Enum.map(&%{voter_id: &1.voter_id, counts: &1.public})}
     end)
     |> Enum.reject(fn {_target_id, details} -> details == [] end)
     |> Map.new()

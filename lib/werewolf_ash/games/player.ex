@@ -22,12 +22,17 @@ defmodule WerewolfAsh.Games.Player do
   graphql do
     type :player
 
+    # qss.19 rule 20 - the stored flag stays hidden; GraphQL's `alive` is the
+    # visible_alive calculation, and death_announced_at is private.
+    hide_fields [:alive]
+    field_names visible_alive: :alive
+
     # rule 3 - user_id is exposed as a field and as the user relationship,
     # but never as a query/filter input named userId.
     filterable_fields [
       :id,
       :role,
-      :alive,
+      :visible_alive,
       :joined_at,
       :game_id,
       :game,
@@ -61,6 +66,13 @@ defmodule WerewolfAsh.Games.Player do
       authorize_if expr(game.state == :finished)
 
       authorize_if expr(exists(game.players, user_id == ^actor(:id) and not alive))
+
+      # qss.19 rule 18 - any seat of the game, once the player's death is
+      # announced.
+      authorize_if expr(
+                     not is_nil(death_announced_at) and
+                       exists(game.players, user_id == ^actor(:id))
+                   )
     end
 
     field_policy :* do
@@ -101,6 +113,15 @@ defmodule WerewolfAsh.Games.Player do
     update :update do
       primary? true
       accept [:role, :alive]
+    end
+
+    # qss.19 rule 6 - the private announced mark, set only by Announcer.
+    update :mark_death_announced do
+      accept []
+
+      argument :at, :utc_datetime_usec, allow_nil?: false
+
+      change set_attribute(:death_announced_at, arg(:at))
     end
 
     destroy :destroy do
@@ -149,7 +170,7 @@ defmodule WerewolfAsh.Games.Player do
     end
 
     # rule 6 - every write action stays exactly as open as it is today.
-    policy action([:create, :join, :update, :destroy]) do
+    policy action([:create, :join, :update, :mark_death_announced, :destroy]) do
       authorize_if always()
     end
 
@@ -181,6 +202,10 @@ defmodule WerewolfAsh.Games.Player do
       default &DateTime.utc_now/0
     end
 
+    attribute :death_announced_at, :utc_datetime_usec do
+      description "Private. Set when an announcement lists this player's death."
+    end
+
     timestamps()
   end
 
@@ -203,6 +228,24 @@ defmodule WerewolfAsh.Games.Player do
     has_many :targeted_by_actions, WerewolfAsh.Games.Action do
       public? true
       destination_attribute :target_id
+    end
+  end
+
+  calculations do
+    # qss.19 rule 19 - alive as the reader may see it: a night victim still
+    # reads alive to a living non-wolf until their death is announced.
+    calculate :visible_alive,
+              :boolean,
+              expr(
+                alive or
+                  (is_nil(death_announced_at) and game.state != :finished and
+                     exists(
+                       game.players,
+                       user_id == ^actor(:id) and alive and
+                         (is_nil(role) or role != :werewolf)
+                     ))
+              ) do
+      public? true
     end
   end
 

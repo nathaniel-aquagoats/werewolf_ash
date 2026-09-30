@@ -24,6 +24,9 @@ defmodule WerewolfAsh.Games.Game do
 
   alias WerewolfAsh.Games.Game.Calculations.MySeat
   alias WerewolfAsh.Games.Game.Changes.AdvancePhase
+  alias WerewolfAsh.Games.Game.Changes.AnnounceDawn
+  alias WerewolfAsh.Games.Game.Changes.AnnounceDusk
+  alias WerewolfAsh.Games.Game.Changes.AnnounceGameOver
   alias WerewolfAsh.Games.Game.Changes.CancelScheduledJobs
   alias WerewolfAsh.Games.Game.Changes.DealRoles
   alias WerewolfAsh.Games.Game.Changes.EndPhaseOnSchedule
@@ -248,6 +251,10 @@ defmodule WerewolfAsh.Games.Game do
       # left the game running; registered after ResolveDayVote so it sees
       # the lynch and the win check both already resolved.
       change OpenHunterWindowOnLynch
+
+      # qss.19 rules 10-12 - the dusk notice, after the lynch, win check and
+      # hunter window have all resolved.
+      change AnnounceDusk
     end
 
     update :end_night do
@@ -271,6 +278,9 @@ defmodule WerewolfAsh.Games.Game do
       # registered after ResolveNightWin so it sees the dawn win check's own
       # verdict.
       change OpenHunterWindowAtDawn
+
+      # qss.19 rules 7-9 - the dawn report, after the win check and window.
+      change AnnounceDawn
     end
 
     update :finish do
@@ -287,6 +297,9 @@ defmodule WerewolfAsh.Games.Game do
 
       # werewolf_ash-qss.9 rule 22 - no timer outlives the game.
       change CancelScheduledJobs
+
+      # werewolf_ash-qss.19 rule 15 - every route into :finished announces the winner.
+      change AnnounceGameOver
     end
 
     # werewolf_ash-qss.9 - the scheduler's entry points. Each takes the
