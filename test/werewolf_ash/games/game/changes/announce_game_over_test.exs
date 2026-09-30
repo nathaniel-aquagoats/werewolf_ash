@@ -14,6 +14,13 @@ defmodule WerewolfAsh.Games.Game.Changes.AnnounceGameOverTest do
     refute over.night_starting
   end
 
+  defp kill_owner!(game) do
+    [game_id: game.id]
+    |> then(&Games.list_players!(query: [filter: &1], authorize?: false))
+    |> Enum.filter(&is_nil(&1.role))
+    |> kill_all!()
+  end
+
   defp others(ctx), do: [ctx.seer, ctx.villager, ctx.victim, ctx.hunter]
 
   test "a direct finish_game announces the winner" do
@@ -35,7 +42,7 @@ defmodule WerewolfAsh.Games.Game.Changes.AnnounceGameOverTest do
   test "the dawn win check route" do
     ctx = night_game()
     kill_all!(others(ctx))
-    kill_all!(Games.list_players!(query: [filter: [role: nil]], authorize?: false))
+    kill_owner!(ctx.game)
     Games.end_night!(ctx.game, %{now: @now}, authorize?: false)
 
     assert_one_game_over(ctx.game, :wolves)
@@ -43,7 +50,7 @@ defmodule WerewolfAsh.Games.Game.Changes.AnnounceGameOverTest do
 
   test "the wolf kill route" do
     ctx = night_game()
-    kill_all!(Games.list_players!(query: [filter: [role: nil]], authorize?: false))
+    kill_owner!(ctx.game)
     kill_all!([ctx.seer, ctx.villager, ctx.hunter])
     night_kill!(ctx.phase, ctx.wolf, ctx.victim)
 
@@ -62,7 +69,7 @@ defmodule WerewolfAsh.Games.Game.Changes.AnnounceGameOverTest do
   test "the hunter deadline fallback route" do
     ctx = night_game()
     kill_all!(others(ctx))
-    kill_all!(Games.list_players!(query: [filter: [role: nil]], authorize?: false))
+    kill_owner!(ctx.game)
     pending_hunter!(ctx.game, ctx.hunter, @now)
 
     Games.resolve_hunter_deadline!(ctx.game, %{now: @now, pick: 0}, authorize?: false)
