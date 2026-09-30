@@ -1,5 +1,7 @@
 # werewolf_ash-qss.19: Day and night announcements: dawn death report with roles, dusk notice
 
+Implemented in PR #33.
+
 Depends on: werewolf_ash-27w.3
 
 ## For the owner
