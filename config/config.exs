@@ -17,8 +17,8 @@ config :ash_oban, pro?: false
 config :werewolf_ash, Oban,
   engine: Oban.Engines.Basic,
   notifier: Oban.Notifiers.Postgres,
-  queues: [default: 10, emails: 10],
-  lifeline: [rescue_after: {2, :hours}],
+  queues: [default: 10, emails: 10, game_clock: 10],
+  lifeline: [rescue_after: {5, :minutes}],
   pruner: [max_age: {1, :day}],
   repo: WerewolfAsh.Repo,
   plugins: [{Oban.Plugins.Cron, []}]
