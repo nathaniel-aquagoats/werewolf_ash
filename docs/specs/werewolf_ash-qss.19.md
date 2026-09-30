@@ -10,9 +10,11 @@ Depends on: werewolf_ash-27w.3
 happens. At dawn the village hears who died in the night and what each one
 was. At dusk it hears who was lynched and what they were, or that nobody was,
 and that night is starting. A hunter's shot is announced at once, and a
-finished game announces its winner. Until dawn, a night victim still looks
-alive to living villagers; the victim and the wolves see the truth. Players
-read all of this over GraphQL with an `announcements` query.
+finished game announces its winner. A night kill is discoverable at once,
+like finding the body (the victim reads as dead to anyone who looks), but
+nothing is announced until dawn: only the dawn announcement lists the death
+and makes the victim's role public. Players read all of this over
+GraphQL with an `announcements` query.
 
 **Decisions.**
 1. Where are announcements stored? — **Decided:** a new `Announcement` record
@@ -26,12 +28,15 @@ read all of this over GraphQL with an `announcements` query.
    one was lynched" on a tie or no votes included; a game won by the lynch
    gets a `game_over` with the winner instead of a night-start notice
    (2026-09-29).
-4. Scope? — **Decided:** includes GraphQL (`announcements` query, hidden-alive
-   rule applied there); live push stays with 27w.4 (2026-09-29).
-5. Night deaths hidden until dawn? — **Decided:** yes; living non-wolf readers
-   see a night victim as alive until the dawn announcement; the victim's own
-   seat, the wolves, dead readers and finished games see the truth
-   (2026-09-28).
+4. Scope? — **Decided:** includes GraphQL (`announcements` query); live push stays with 27w.4 (2026-09-29).
+5. Are night deaths hidden from the living until dawn? — **Decided:** no
+   (2026-09-30, supersedes the 2026-09-28 decision that hid them). A night
+   kill is discoverable at once: `alive` reads false to anyone who looks, and
+   the victim, being dead, gets the dead's full view at once (the dead see
+   everything). But it is not announced until dawn: nothing is pushed or
+   announced mid-night, and the dawn announcement lists the death and makes
+   the role public. A hunter's shot is unchanged and still announced at once.
+   Aliveness, votes and the seer are unchanged from today.
 6. Every lynch reveals the lynched role at dusk — **Decided** (2026-09-28).
 7. How is a death recorded in an announcement? — **Decided:** a list of
    entries, each the player, the role they held and a cause (lynched, killed,
@@ -45,52 +50,34 @@ read all of this over GraphQL with an `announcements` query.
    (2026-09-29).
 9. When is a death "announced"? — **Decided:** a private mark on the player
    row, set when an announcement lists them; it drives both "role becomes
-   public" and "no longer hidden" (2026-09-29).
-10. How does a living reader see a hidden victim as alive? — **Decided:** over
-    GraphQL `alive` becomes a computed value that says true for an unannounced
-    night victim when the reader is a living non-wolf in a running game; the
-    stored flag is untouched, so every game rule still uses the truth
-    (2026-09-29).
-11. Does the hidden death leak through votes? — **Decided:** it would, so for
-    living readers a player counts as alive for vote visibility until their
-    death is announced. Dead readers see the real state, and the lynch itself
-    is unchanged (2026-09-29).
-12. Does the dawn report appear when nobody died? — **Decided:** yes, with an
+   public" (2026-09-29).
+10. Does the dawn report appear when nobody died? — **Decided:** yes, with an
     empty list, and the dusk one always (2026-09-29).
-13. The shot's time? — **Decided:** the wall clock when the shot lands; dawn
+11. The shot's time? — **Decided:** the wall clock when the shot lands; dawn
     and dusk use the transition's `now`; `game_over` the wall clock
     (2026-09-29).
-14. Order of announcements? — **Decided:** creation order (`inserted_at`),
+12. Order of announcements? — **Decided:** creation order (`inserted_at`),
     with `game_over` always last. Not `announced_at`: a shot uses the wall
     clock while dawn and dusk use the injected `now`, so the two can disagree
     (2026-09-29).
-15. Does a shot notice also report an earlier, unannounced night victim? —
+13. Does a shot notice also report an earlier, unannounced night victim? —
     **Decided:** no, only the shot victim; the night victim waits for dawn
     (2026-09-29).
-16. A night victim being unable to post in chat while everyone else can —
-    **Decided:** accepted, not hidden (2026-09-29).
-17. May the seer investigate a night victim before dawn? — **Decided:** yes.
-    The investigation succeeds, gives the victim's real werewolf yes/no and
-    spends the seer's night action. Only a player killed by this night's
-    landed wolf kill and not yet announced qualifies; every other dead target
-    is still refused (2026-09-29).
 
 **Rule changes.** Add to CLAUDE.md, under Conventions & Patterns, after "Deaths
 are announced":
 
-> - Announcements (owner decisions 2026-09-29): every announcement is an
->   `Announcement` row (dawn, dusk, shot, game_over), created by the game's
->   rules inside the transition's own transaction, readable by every seat of
->   the game and by no one else. A death is announced when a row lists it: a
->   night kill at dawn, a lynch at dusk, a hunter's shot at once. Until then
->   the victim of a night kill reads as alive to living non-wolf readers, in
->   every field and every vote view; the victim's seat, the wolves, dead
->   readers and finished games see the truth. A dead player's role is public
->   from the moment their death is announced.
+> - Announcements (owner decisions 2026-09-29, 2026-09-30): every announcement
+>   is an `Announcement` row (dawn, dusk, shot, game_over), created by the
+>   game's rules inside the transition's own transaction, readable by every
+>   seat of the game and by no one else. A night kill is discoverable at once
+>   (the victim reads as dead and the dead see everything) but is not
+>   announced until dawn; only then does the dawn announcement list the death
+>   and make the victim's role public. A lynch is announced at dusk and a
+>   hunter's shot at once.
 
-Change to the "Deaths are announced" bullet: nothing is removed; the dusk
-lynch reveal it already states is now delivered by the dusk announcement.
-Change to 27w.3 rule 33 (Action read policy) as amended by rule 21 below.
+The "Deaths are announced" bullet is unchanged; the dusk lynch reveal it states
+is now delivered by the dusk announcement.
 
 ## Goal
 
@@ -99,16 +86,16 @@ night's deaths with their roles; dusk reports the lynch (or that there was
 none) and that night begins, or hands over to a `game_over` with the winner
 when the lynch ended the game; the hunter's shot is reported the instant it
 lands. Every seat of the game, dead included, can read these, outsiders
-cannot, and over GraphQL they come in order. A night's death stays invisible to
-living villagers, in players, votes and tallies, until the dawn report
-names it.
+cannot, and over GraphQL they come in order. A night victim is
+discoverable as dead at once, but nothing announces the death, and their role
+stays hidden from living players, until the dawn report names it.
 
 ## Rules
 
 Terms: "announced" means the player's private `death_announced_at` is
-non-nil. "Unannounced death" is `alive == false` and not announced. "Reader"
-is the Ash actor; a "living non-wolf reader" holds a living, non-werewolf seat
-in the game. All creation below uses `authorize?: false`, inside the
+non-nil. "Unannounced death" is `alive == false` and not announced (in practice a
+night kill's victim before dawn). `alive` is never hidden: a night death is
+discoverable at once but only announced at dawn (card decision 5). All creation below uses `authorize?: false`, inside the
 transition's own transaction, so a failure rolls the transition back.
 
 ### The resource
@@ -206,73 +193,27 @@ transition's own transaction, so a failure rolls the transition back.
     of a night victim before dawn and can read it after; can read a lynched
     player's role right after `end_day`, and a shot player's role right after
     the shot; and a dead player who was never announced (killed directly with
-    `update_player`) is still hidden. The existing grants are unchanged.
-
-### Hidden night death
-
-19. `Player` gains a public boolean calculation `visible_alive`, an
-    expression, that is true when `alive`, and otherwise true only when all of
-    the following hold: the player is not announced, the game is not
-    `:finished`, and the reader holds a living seat in the game that is not a
-    werewolf. It is false for: the victim reading their own seat, a werewolf
-    reader, a dead reader, any reader in a finished game, an announced dead
-    player, and no actor.
-20. Over GraphQL `Player`'s `alive` field is `visible_alive`: the attribute is
-    hidden with `hide_fields [:alive]` and the calculation is renamed to
-    `alive` with `field_names`. It applies on every path that returns a
-    `Player` (`game.players`, `mySeat`, an action's actor or target).
-    `death_announced_at` is not exposed. The stored `alive` attribute, and the
-    domain code interface, are unchanged so every game rule keeps reading the
-    truth.
-21. Amends 27w.3 rule 33, for LIVING readers only. "Publicly alive" means
-    `alive` or unannounced. A living reader reads a `:vote` row (27w.3's
-    Action read policy) only when its voter and target are both publicly alive,
-    or it is their own. A dead reader still reads every `:vote` row and every
-    flag stays real (qss.16 rule 9). `VoteTally.build_entries` therefore keeps
-    two flags per entry: `counts` (real aliveness, exactly as today) and a
-    public flag (publicly alive). The dead reader's view is unchanged and
-    outputs the real `counts`. The living reader's view filters on the public
-    flag (plus their own entry) and outputs the public flag as `counts`. The
-    no-seat view stays `%{}`. The lynch itself (`ResolveLynch`) keeps the real
-    `alive`.
-22. Rules 7-13 do not add an announcement before their moment: after a wolf
-    kill and before `end_night`, `announcements` has no entry naming the
-    victim, and a living villager's `players { alive }` shows the victim
-    `true`.
+    `update_player`) is still hidden. The existing grants are unchanged: the
+    victim themselves, being dead, already read every role.
+19. A wolf kill announces nothing. After a wolf kill and before `end_night`,
+    no announcement row exists for it (`announcements` has no entry naming the
+    victim), while every reader's `players { alive }` already shows the victim `false`
+    (the stored value, exactly as today), and a living villager's read of the
+    victim's role is still forbidden.
 
 ### GraphQL
 
-23. `Announcement` gets `AshGraphql.Resource` (type `:announcement`), the
+20. `Announcement` gets `AshGraphql.Resource` (type `:announcement`), the
     embedded `Death` gets type `:announced_death`. A new read action
     `:in_game` with a required `game_id` argument backs the list query
     `announcements(gameId)`, sorted per rule 5, with no pagination. It applies
     rule 3 by policy: a non-member or an unknown id gets `[]`, no `errors`,
     and no token gets `[]`. No mutation is added for announcements.
-24. `Game` gains no field for announcements; a client asks `announcements`.
-
-### The seer and a night victim
-
-25. `TargetAlive` gains an option (name at the coder's choice) that the
-    `:investigate` clause of `Action :create` passes, and no other clause does.
-    With it, a dead target passes when, and only when, all hold: the target is
-    not announced, and the phase the action names holds a `:kill` action on
-    that target whose `result` is `%{"killed" => true}` (a landed kill in this
-    night). The `:kill` lookup is a game-rule read with `authorize?: false`:
-    the seer cannot read `:kill` rows under the Action read policy, so an
-    actor-scoped read would refuse every case. The investigation is created, `RecordInvestigationResult` gives the
-    target's real werewolf yes/no, and it counts as the seer's one
-    investigation for the phase (a second is refused).
-26. Every other dead target is still refused on `:target_id` for
-    `:investigate`: a player killed with `update_player`, a lynched or shot
-    player (announced), a night victim already announced, and a target whose
-    kill was spent by the bodyguard (they are alive). `:vote`, `:protect`,
-    `:shoot` and `:kill` refuse every dead target as today, with no
-    exception. `ActorAlive` still applies, so a seer killed in the night
-    cannot investigate.
+21. `Game` gains no field for announcements; a client asks `announcements`.
 
 ### Finish
 
-27. `Game :finish` gains `require_atomic? false`, because the `game_over`
+22. `Game :finish` gains `require_atomic? false`, because the `game_over`
     hook is an `after_action` that cannot run as a single atomic UPDATE; the
     hook is written as a change that composes with any other hook already on
     `:finish`.
@@ -287,10 +228,9 @@ transition's own transaction, so a failure rolls the transition back.
   is 27w.2's existing rule 5, and `qss.17` is closed.
 - The full event feed with private events (seer answers, which wolf killed):
   qss.11. This bead's `Announcement` is the public half only.
-- Hiding the victim's silence in chat, or hiding `alive` from the chat
-  visibility filter: rule 16 of the card; no bead.
-- Hiding any other field of the victim (their `:kill` row and the action
-  result are already hidden by 27w.2's Action policy).
+- Hiding a night death (aliveness, votes, the seer's options, chat): decided
+  against on 2026-09-30; `alive`, the Action read policy, `VoteTally` and
+  `TargetAlive` are untouched.
 - Changing when a hunter window opens, `ResolveLynch`, `ApplyKill`,
   `Games.create_action/5`, `resolve_hunter_deadline.ex`, `AdvancePhase` or
   `HunterWindow`.
@@ -333,33 +273,18 @@ Direct unit tests:
 - `WerewolfAsh.Games.Game.Changes.AnnounceGameOver` (on `:finish`) - every
   route (lynch, dawn check, kill, shot, deadline, `finish_game`) leaves exactly
   one `game_over` with the winner and `[]`.
-- `TargetAlive.validate/3` with the new option - passes for an unannounced
-  victim of a landed kill in the phase; fails on `:target_id` for a player
-  killed with `update_player`, an announced victim, and a target whose kill
-  was spent; without the option a dead target still fails. Through
-  `Games.create_action/5`: the seer investigates the night victim before dawn
-  and gets the real yes/no, a second investigation is refused, and after dawn
-  the same call is refused (rule 26).
 - `Player` field policy (`role`) — a living villager forbidden before, allowed
   after an announcement, for a lynched, killed, and shot player; a
   `update_player`-killed one stays forbidden.
-- `Player.visible_alive` (calculation; read with `load: :visible_alive` and each actor) —
-  true for a living villager on an unannounced victim; false for the victim,
-  a wolf, a dead reader, in a finished game, and after the announcement; true
-  for a living player.
-- The vote read policy and `VoteTally.calculate/3` / `Phase.vote_tally` - a
-  night victim's day vote, and votes for them, are still shown to a living
-  villager, marked `counts: true`, before dawn, and dropped once announced; a
-  dead reader sees real `counts` in both cases.
 - GraphQL: `announcements(gameId)` as a member, as a dead member, as an
-  outsider (`[]`), with no token (`[]`); `players { alive }` and
-  `mySeat { alive }` for a villager (`true` for the victim before dawn), for
-  the victim and a wolf (`false`), and after dawn (`false`); `role` of the
-  victim before and after dawn as a villager; introspection: no `alive`
-  argument or mutation, `deathAnnouncedAt` absent.
+  outsider (`[]`), with no token (`[]`); after a night kill and before dawn,
+  `players { alive }` shows the victim `false` to a villager, the victim and a
+  wolf, `role` of the victim is forbidden to the villager before dawn and
+  readable after, and `announcements` holds no entry naming the victim;
+  introspection: `deathAnnouncedAt` is absent from the schema.
 
 End to end: through the code interface, a started game plays a night with a
-wolf kill, the villager reads the victim alive and role hidden and
+wolf kill, the villager reads the victim dead at once with the role hidden and
 `announcements` empty, `end_night` produces a `dawn` naming the victim with
 role, the villager now reads the victim dead with the role; a day with a
 lynch produces a `dusk` (`lynched`, role, `night_starting` true); a second
@@ -382,8 +307,7 @@ hook to `:finish`; the two coexist, each its own change.
 
 - `lib/werewolf_ash/games.ex` (resource and interface entries)
 - `lib/werewolf_ash/games/game.ex` (register the three changes; `finish`)
-- `lib/werewolf_ash/games/player.ex` (attribute, calculation, field policy,
-  GraphQL `hide_fields`/`field_names`)
+- `lib/werewolf_ash/games/player.ex` (attribute, field policy)
 - `lib/werewolf_ash/games/announcement.ex`,
   `lib/werewolf_ash/games/announcement/*.ex` (new: embedded Death, kind and
   cause enums)
@@ -391,13 +315,7 @@ hook to `:finish`; the two coexist, each its own change.
 - `lib/werewolf_ash/games/action/changes/announce_shot.ex` (new; `apply_shot.ex`
   itself is not changed)
 - `lib/werewolf_ash/games/announcer.ex` (new)
-- `lib/werewolf_ash/games/action/validations/target_alive.ex` (rules 25-26)
-- `lib/werewolf_ash/games/action.ex` (27w.3 rule 33's vote read policy,
-  amended by rule 21; the `:investigate` clause's `TargetAlive` wiring; the
-  `AnnounceShot` registration)
-- `lib/werewolf_ash/games/phase/calculations/vote_tally.ex` (rule 21)
-- `lib/werewolf_ash/games/player/calculations/` (new: `visible_alive`, if not
-  written inline)
+- `lib/werewolf_ash/games/action.ex` (the `AnnounceShot` registration only)
 - `mobile/schema.graphql`, `mobile/src/gql/*` (regenerated)
 - `priv/repo/migrations/` and `priv/resource_snapshots/repo/` (generated)
 - `CLAUDE.md` (the rule text above; the owner edits it, coders are refused)
@@ -424,38 +342,10 @@ dead, not a role grant) and is unaffected.
 `policy_end_to_end_test.exs:58`, `game/policy_test.exs:31`,
 `message/visibility_test.exs:22`, `action/policy_test.exs:193,203,214`,
 `player/policy_test.exs:22,105`, `author_may_post_test.exs:26`. All kill by
-`update_player!`, which is never announced; rules 19-21 change only the
-`visible_alive` calculation and the vote-read expression, and the raw `alive`
-attribute those tests assert is unchanged (rule 20 keeps it). The vote-policy
-tests at `action/policy_test.exs:183-216` read `:vote` rows with dead voters
-for a dead or living reader; rule 21 makes an unannounced dead voter's row
-visible to a living reader, so any test there whose dead voter comes from
-`update_player!` (`:193,203,214`) and expects a living reader NOT to see the
-row is stale, since those players are unannounced. The corrected assertion
-is: mark the death announced first (or set `death_announced_at` through the
-change under test) to keep the "dead voter is dropped" case; add a case for
-the unannounced one. These tests belong to 27w.3 and do not exist until it
-lands, so the coder confirms by running them.
-
-Rule 21 breaks two existing vote-tally tests (the tests' expectation is
-stale, not the rule). Grep: `grep -rn "vote_tally\|VoteTally" test`.
-`test/werewolf_ash/games/phase/calculations/vote_tally_test.exs:145-167` (the
-`living_view`/`dead_view`/`own_vote_view` test that kills `voter_dead`,
-`target_b`, `reader_dead` with `update_player!`, asserts at `:159-162` and the
-`dead_view` at `:163-167`) and `test/werewolf_ash/games_test.exs:1209-1290`
-(the three tests at `:1209-1256`, `:1237-1256`, `:1258-1290`, killing voters
-or targets the same way and asserting a living reader drops them). Those
-players are unannounced, so a living reader now still sees them `counts: true`.
-Fix: set `death_announced_at` on each player those tests kill (a private
-attribute: `Changeset.force_change_attribute` on `Player :update`, in a small
-test helper) so the "dropped" cases hold, keep the `dead_view` assertions as
-they are (a dead reader's real `counts: false`), and add one case where the
-death is unannounced and the living reader sees the vote with `counts: true`.
-Also `grep -rn "TargetAlive" test` gives
-`action/validations/target_alive_test.exs:21,34,41` (default behaviour, no
-option, so unchanged) and the `:investigate` dead-target tests
-`action_test.exs:153` (kills with `update_player!`, no landed kill row, still
-refused under rule 26).
+`update_player!`, which is never announced. No rule changes `alive`, the
+Action read policy, `VoteTally` or `TargetAlive`, so none of these, nor
+`vote_tally_test.exs`, `games_test.exs`' tally tests or
+`action/validations/target_alive_test.exs`, is affected.
 
 `grep -rn "end_day\|end_night" test` (files: `games_test.exs`,
 `policy_end_to_end_test.exs`, `action_test.exs`,
@@ -473,16 +363,7 @@ so no break.
 `grep -rn "destroy_game" test`: `games_test.exs:589`, `message_test.exs:173`
 destroy a game; with rule 1's cascade this still succeeds.
 
-`grep -rn "alive" test/werewolf_ash_web`: not yet written for 27w.3; if the
-27w.3 GraphQL tests read `alive` of a killed player as a living reader, the
-expectation is stale (rule 20), not the rule: use `true` before dawn, `false`
-after.
-
-Framework claims: `field_names` covers calculations
-(`deps/ash_graphql/lib/resource/resource.ex:2544` reads `field_names[calculation.name]`);
-that a calculation renamed to the same GraphQL name as a hidden attribute
-compiles is unverified: the coder proves it with the introspection test and
-reports if wrong. That `after_action` hooks registered in `end_day` and
+Framework claims: that `after_action` hooks registered in `end_day` and
 `end_night` run in registration order after the `ResolveWin` reactor's own
 `finish` is the convention `open_hunter_window_on_lynch.ex` already relies on.
 That the reactor's `update :finish` step runs `Game :finish`'s `after_action`
