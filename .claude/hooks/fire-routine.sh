@@ -53,9 +53,11 @@ fi
 
 RESPONSE="$(mktemp)"
 trap 'rm -f "$RESPONSE"' EXIT
+# The token goes in through a file descriptor (printf is a builtin), so it
+# never appears on curl's command line where ps would show it.
 CODE="$(curl -sS -o "$RESPONSE" -w '%{http_code}' -X POST \
   "$API_BASE/v1/claude_code/routines/$ROUTINE_ID/fire" \
-  -H "Authorization: Bearer $ROUTINE_TOKEN" \
+  -H @<(printf 'Authorization: Bearer %s\n' "$ROUTINE_TOKEN") \
   -H "anthropic-version: 2023-06-01" \
   -H "anthropic-beta: experimental-cc-routine-2026-04-01" \
   -H "Content-Type: application/json" \
