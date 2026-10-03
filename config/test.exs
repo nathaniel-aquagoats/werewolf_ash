@@ -3,6 +3,9 @@ import Config
 config :werewolf_ash, token_signing_secret: "lrngqyv3t+hJHae+6rfOT+blEue3dH9w"
 config :werewolf_ash, Oban, testing: :manual
 
+# Log output is captured per test and printed only for a test that fails.
+config :ex_unit, capture_log: true
+
 config :werewolf_ash, WerewolfAsh.Repo,
   username: "postgres",
   password: "postgres",

@@ -7,7 +7,6 @@ defmodule WerewolfAsh.Games.AnnouncedVisibilityTest do
   use WerewolfAsh.DataCase, async: true
 
   import WerewolfAsh.AnnouncementHelpers
-  import WerewolfAsh.Generators
 
   alias Ash.ForbiddenField
   alias WerewolfAsh.Games

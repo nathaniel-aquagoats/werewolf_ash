@@ -26,7 +26,7 @@ defmodule WerewolfAsh.Accounts.BearerToken do
 
   Returns `:error` for anything that is not a currently valid user token.
   """
-  @spec user_from_token(String.t() | nil) :: {:ok, Ash.Resource.record()} | :error
+  @spec user_from_token(String.t() | nil) :: {:ok, Ash.Resource.Record.t()} | :error
   def user_from_token(token) when is_binary(token) do
     with {:ok, %{"sub" => subject, "jti" => jti} = claims, resource}
          when not is_map_key(claims, "act") <- Jwt.verify(token, @otp_app),

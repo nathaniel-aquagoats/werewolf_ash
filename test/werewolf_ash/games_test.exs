@@ -398,7 +398,7 @@ defmodule WerewolfAsh.GamesTest do
     end
 
     test "requires the owner as actor, and leaves every player roleless" do
-      %{game: game, owner: owner} = ready()
+      %{game: game} = ready()
       stranger = generate(user())
 
       # rule 3a - a non-owner or anonymous actor is forbidden by the policy,
