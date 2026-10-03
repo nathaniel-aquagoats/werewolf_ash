@@ -48,7 +48,7 @@ outside your scope, leave it and write it in the PR body.
 
 ## How to work
 
-1. Read the spec, then read the code it names. Read `CLAUDE.md` and the skill
+1. Read the spec, then read the code it names. Read `AGENTS.md` and the skill
    under `.claude/skills/` for the framework you are touching
    (`ash-framework`, `reactor`, `phoenix-api`) before any domain change.
 2. Use the Ash generators rather than hand-writing resources. After **any**
@@ -58,7 +58,7 @@ outside your scope, leave it and write it in the PR body.
    only changes when a mobile screen's own GraphQL documents use the changed
    operations, so an unchanged `mobile/src/gql` is normal for backend-only work.
 3. Write the tests the spec's `Acceptance` section names, to the test standard
-   in `CLAUDE.md`: every public function gets a direct unit test on its own
+   in `AGENTS.md`: every public function gets a direct unit test on its own
    contract, every rule gets a test that fails if the rule is deleted, plus one
    end-to-end path. Assert on behaviour and on error class or field, never on
    message text, whole structs, generated ids or timestamps. Two to five tests

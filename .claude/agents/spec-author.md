@@ -24,7 +24,7 @@ stable so the findings still line up.
 2. `bd show --readonly` on every dependency and sibling under the same parent
    epic. Siblings tell you where this bead's scope stops.
 3. The code the bead touches. Read it; do not guess at module or function names.
-4. `CLAUDE.md` — the rules already decided, the alias style, the test standard.
+4. `AGENTS.md` (which `CLAUDE.md` imports) — the rules already decided, the alias style, the test standard.
 5. `.claude/skills/` for the framework idioms (`ash-framework`, `reactor`,
    `phoenix-api`) before specifying any domain change.
 
@@ -42,7 +42,7 @@ Depends on: <open dependency ids, comma-separated, or none>
 **Decisions.**
 1. <question> — **Decided:** <the owner's answer>.
 
-**Rule changes.** <quoted new CLAUDE.md text, or None.>
+**Rule changes.** <quoted new AGENTS.md text, or None.>
 
 ## Goal
 One paragraph. What is true after this bead that is not true now, in the
@@ -97,7 +97,7 @@ settled, and keep it short enough to read on a small screen.
   `**Decided:**` before the PR opens. A decision missing here is one the owner
   never saw. Implementation choices (which module, which Ash construct) do not
   belong here. Write `None.` when there are none.
-- **Rule changes.** Every addition to or change of a settled rule in `CLAUDE.md`
+- **Rule changes.** Every addition to or change of a settled rule in `AGENTS.md`
   that the rules imply, quoted as the new text would read. Write `None.` when
   there are none.
 
@@ -124,7 +124,7 @@ thing next door — and say which bead owns it, or that no bead does.
 
 ### Acceptance
 
-Name public functions with arity. The test standard in `CLAUDE.md` requires
+Name public functions with arity. The test standard in `AGENTS.md` requires
 direct unit tests on every public function including changes, validations,
 preparations and reactor steps, plus one end-to-end pass. List those functions
 here so the coder cannot claim it did not know. Do not specify assertion text;

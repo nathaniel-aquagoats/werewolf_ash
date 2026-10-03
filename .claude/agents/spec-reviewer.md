@@ -16,7 +16,7 @@ A bead id. The draft is at `docs/specs/<bead-id>.md`.
 ## Read before judging
 
 `bd show <bead-id> --readonly` including its NOTES, every dependency and every
-sibling under the same epic; the code the spec claims to touch; `CLAUDE.md`;
+sibling under the same epic; the code the spec claims to touch; `AGENTS.md`;
 the relevant skill under `.claude/skills/`. Read the actual code. A spec that
 reinvents an existing function reads perfectly well on its own.
 
@@ -39,7 +39,7 @@ Work through all seven. For each, say `pass` or give findings.
    beads' test files, and a spec that does not warn about them sends the coder
    into a red suite where the tempting fix is to change a settled rule instead
    of a stale expectation. Name the files and lines the spec missed.
-3. **No contradiction with settled decisions.** `CLAUDE.md` records rules
+3. **No contradiction with settled decisions.** `AGENTS.md` records rules
    already decided (lynch ties, wolf-kill ties, hunter window, chat visibility,
    magic-link-only auth, alias style, the test standard). Bead NOTES record
    decisions from earlier reviews. A spec that quietly reverses one of these is
@@ -70,7 +70,7 @@ Work through all seven. For each, say `pass` or give findings.
    or wrong line either strands the bead or lets it start on top of unmerged
    work, so it is blocking. **Decisions** lists every gameplay-affecting
    judgement call and Assumption in the spec, and **Rule changes** quotes every
-   change to a settled rule in `CLAUDE.md` that the rules imply. The owner
+   change to a settled rule in `AGENTS.md` that the rules imply. The owner
    approves by merging, so a gameplay decision or rule change missing from the
    card is blocking. List every item still marked **Recommended** in your
    reply: the coordinator must ask the owner about each before the PR opens. Wording and length are nits.
